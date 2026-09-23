@@ -1,7 +1,8 @@
 import { and, asc, desc, eq, ilike, inArray, isNull, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { activities, clientProperties, clients, messages, properties, type Client } from "@/lib/db/schema";
-import { STAGE_KEYS } from "@/lib/pipeline";
+import { stageKeys } from "@/lib/pipeline";
+import { getStages } from "./settings";
 
 export type ClientListItem = Client & { unreadCount: number; propertyCount: number };
 
@@ -20,7 +21,7 @@ const propertyCountSql = sql<number>`(select count(*)::int from client_propertie
 export async function listClients(filters: ClientListFilters = {}): Promise<ClientListItem[]> {
   const conditions = [];
   if (!filters.includeArchived) conditions.push(isNull(clients.archivedAt));
-  if (filters.stage && STAGE_KEYS.includes(filters.stage)) conditions.push(eq(clients.stage, filters.stage));
+  if (filters.stage) conditions.push(eq(clients.stage, filters.stage));
   if (filters.search) {
     const term = `%${filters.search.trim()}%`;
     conditions.push(
@@ -35,11 +36,12 @@ export async function listClients(filters: ClientListFilters = {}): Promise<Clie
   if (filters.attention) conditions.push(sql`${unreadCountSql} > 0`);
   if (filters.followUps) conditions.push(sql`${clients.nextFollowUpAt} <= now()`);
 
+  const stageOrder = filters.sort === "stage" ? stageKeys(await getStages()) : [];
   const orderBy =
     filters.sort === "name"
       ? [asc(clients.firstName), asc(clients.lastName)]
-      : filters.sort === "stage"
-        ? [sql`array_position(array[${sql.join(STAGE_KEYS.map((k) => sql`${k}`), sql`, `)}]::text[], ${clients.stage})`, desc(clients.updatedAt)]
+      : filters.sort === "stage" && stageOrder.length > 0
+        ? [sql`array_position(array[${sql.join(stageOrder.map((k) => sql`${k}`), sql`, `)}]::text[], ${clients.stage})`, desc(clients.updatedAt)]
         : filters.sort === "created"
           ? [desc(clients.createdAt)]
           : [desc(sql`coalesce(${clients.lastContactAt}, ${clients.updatedAt})`)];

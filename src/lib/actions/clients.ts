@@ -13,15 +13,17 @@ import { parseDateTimeLocal } from "@/lib/format";
 import { logActivity } from "@/lib/messaging/activity";
 import { relinkMessagesForClient } from "@/lib/messaging/ingest";
 import { normalizePhone } from "@/lib/phone";
-import { STAGE_KEYS, stageLabel } from "@/lib/pipeline";
-import { getSettings } from "@/lib/queries/settings";
+import { defaultStageKey, isStageKey, stageLabel, type Stage } from "@/lib/pipeline";
+import { getSettings, stagesFrom } from "@/lib/queries/settings";
+import { dispatchWorkflowEvent } from "@/lib/workflows/engine";
 import { fieldErrorsFrom, formNumber, formOptional, formString, type ActionResult } from "@/lib/validation";
 
-const clientSchema = z.object({
+const clientSchema = (stages: Stage[]) =>
+  z.object({
   firstName: z.string().trim().min(1, "First name is required").max(100),
   lastName: z.string().trim().max(100),
   clientType: z.enum(CLIENT_TYPES.map((t) => t.key) as [string, ...string[]]),
-  stage: z.enum(STAGE_KEYS as [string, ...string[]]),
+  stage: z.string().refine((value) => isStageKey(stages, value), "Choose a pipeline stage"),
   source: z.string().trim().max(100).nullable(),
   budgetMin: z.number().int().min(0).nullable(),
   budgetMax: z.number().int().min(0).nullable(),
@@ -41,13 +43,14 @@ function revalidateClient(id?: string) {
 export async function saveClientAction(_prev: ActionResult, formData: FormData): Promise<ActionResult> {
   await requireSession();
   const settings = await getSettings();
+  const stages = stagesFrom(settings);
   const id = formOptional(formData, "id");
 
-  const parsed = clientSchema.safeParse({
+  const parsed = clientSchema(stages).safeParse({
     firstName: formString(formData, "firstName"),
     lastName: formString(formData, "lastName"),
     clientType: formString(formData, "clientType") || "buyer",
-    stage: formString(formData, "stage") || "prospect",
+    stage: formString(formData, "stage") || defaultStageKey(stages),
     source: formOptional(formData, "source"),
     budgetMin: formNumber(formData, "budgetMin"),
     budgetMax: formNumber(formData, "budgetMax"),
@@ -101,10 +104,11 @@ export async function saveClientAction(_prev: ActionResult, formData: FormData):
       await logActivity({
         clientId: id,
         type: "stage_changed",
-        title: `Moved to ${stageLabel(values.stage)}`,
-        body: `From ${stageLabel(existing.stage)}`,
+        title: `Moved to ${stageLabel(stages, values.stage)}`,
+        body: `From ${stageLabel(stages, existing.stage)}`,
         metadata: { from: existing.stage, to: values.stage },
       });
+      await dispatchWorkflowEvent({ trigger: "client.stage_changed", client: updated, extra: { previous_stage: existing.stage } });
     }
     await relinkMessagesForClient(updated);
     revalidateClient(id);
@@ -113,6 +117,7 @@ export async function saveClientAction(_prev: ActionResult, formData: FormData):
 
   const [created] = await db.insert(clients).values(values).returning();
   await logActivity({ clientId: created.id, type: "client_created", title: "Client added" });
+  await dispatchWorkflowEvent({ trigger: "client.created", client: created });
   const linked = await relinkMessagesForClient(created);
   if (linked > 0) {
     await logActivity({
@@ -127,21 +132,24 @@ export async function saveClientAction(_prev: ActionResult, formData: FormData):
 
 export async function changeStageAction(clientId: string, stage: string): Promise<ActionResult> {
   await requireSession();
-  if (!STAGE_KEYS.includes(stage)) return { ok: false, error: "Unknown stage" };
+  const stages = stagesFrom(await getSettings());
+  if (!isStageKey(stages, stage)) return { ok: false, error: "Unknown stage" };
   const existing = await db.query.clients.findFirst({ where: eq(clients.id, clientId) });
   if (!existing) return { ok: false, error: "Client not found" };
   if (existing.stage === stage) return { ok: true };
-  await db
+  const [updated] = await db
     .update(clients)
     .set({ stage, stageChangedAt: new Date(), updatedAt: new Date() })
-    .where(eq(clients.id, clientId));
+    .where(eq(clients.id, clientId))
+    .returning();
   await logActivity({
     clientId,
     type: "stage_changed",
-    title: `Moved to ${stageLabel(stage)}`,
-    body: `From ${stageLabel(existing.stage)}`,
+    title: `Moved to ${stageLabel(stages, stage)}`,
+    body: `From ${stageLabel(stages, existing.stage)}`,
     metadata: { from: existing.stage, to: stage },
   });
+  await dispatchWorkflowEvent({ trigger: "client.stage_changed", client: updated, extra: { previous_stage: existing.stage } });
   revalidateClient(clientId);
   return { ok: true };
 }
@@ -193,7 +201,8 @@ export async function addActivityAction(_prev: ActionResult, formData: FormData)
     title: parsed.data.type === "note" ? "Note" : `${label} logged`,
     body: parsed.data.body,
   });
-  await db.update(clients).set({ lastContactAt: parsed.data.type === "note" ? undefined : new Date() }).where(eq(clients.id, clientId));
+  const [client] = await db.update(clients).set({ lastContactAt: parsed.data.type === "note" ? undefined : new Date() }).where(eq(clients.id, clientId)).returning();
+  if (client) await dispatchWorkflowEvent({ trigger: "client.activity_logged", client, extra: { activity_type: parsed.data.type, activity_body: parsed.data.body } });
   revalidateClient(clientId);
   return { ok: true };
 }
@@ -227,13 +236,14 @@ export async function linkPropertyAction(_prev: ActionResult, formData: FormData
   const property = await db.query.properties.findFirst({ where: eq(properties.id, parsed.data.propertyId) });
   if (!property) return { ok: false, error: "Property not found" };
 
-  await db
+  const [link] = await db
     .insert(clientProperties)
     .values({ ...parsed.data, viewingAt })
     .onConflictDoUpdate({
       target: [clientProperties.clientId, clientProperties.propertyId],
       set: { status: parsed.data.status, notes: parsed.data.notes, viewingAt, updatedAt: new Date() },
-    });
+    })
+    .returning();
   await logActivity({
     clientId: parsed.data.clientId,
     type: "property_linked",
@@ -241,6 +251,8 @@ export async function linkPropertyAction(_prev: ActionResult, formData: FormData
     body: CLIENT_PROPERTY_STATUSES.find((s) => s.key === parsed.data.status)?.label,
     metadata: { propertyId: property.id, status: parsed.data.status },
   });
+  const linkedClient = await db.query.clients.findFirst({ where: eq(clients.id, parsed.data.clientId) });
+  if (linkedClient && link) await dispatchWorkflowEvent({ trigger: "property.linked", client: linkedClient, property, link });
   revalidateClient(parsed.data.clientId);
   revalidatePath(`/properties/${property.id}`);
   revalidatePath("/properties");
@@ -275,6 +287,16 @@ export async function updateClientPropertyAction(_prev: ActionResult, formData: 
       title: `${property?.title ?? "Property"}: ${CLIENT_PROPERTY_STATUSES.find((s) => s.key === parsed.data.status)?.label ?? parsed.data.status}`,
       metadata: { propertyId: parsed.data.propertyId, from: existing.status, to: parsed.data.status },
     });
+    const client = await db.query.clients.findFirst({ where: eq(clients.id, parsed.data.clientId) });
+    if (client && property) {
+      await dispatchWorkflowEvent({
+        trigger: "property.link_status_changed",
+        client,
+        property,
+        link: { ...existing, status: parsed.data.status, notes: parsed.data.notes, viewingAt },
+        extra: { previous_status: existing.status },
+      });
+    }
   }
   revalidateClient(parsed.data.clientId);
   revalidatePath(`/properties/${parsed.data.propertyId}`);

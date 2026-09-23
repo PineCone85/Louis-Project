@@ -6,7 +6,7 @@ import { saveClientAction } from "@/lib/actions/clients";
 import { CLIENT_SOURCES, CLIENT_TYPES } from "@/lib/constants";
 import type { Client } from "@/lib/db/schema";
 import { toDateTimeLocal } from "@/lib/format";
-import { STAGES } from "@/lib/pipeline";
+import { useStages } from "@/components/pipeline/stages-provider";
 import type { ActionResult } from "@/lib/validation";
 import { SubmitButton } from "@/components/ui/form-controls";
 import { Field, cx } from "@/components/ui/primitives";
@@ -15,6 +15,7 @@ export type ClientFormInitial = Partial<Pick<Client, "firstName" | "lastName" | 
 
 export function ClientForm({ id, initial, cancelHref, currency, timezone }: { id?: string; initial?: ClientFormInitial; cancelHref: string; currency: string; timezone: string }) {
   const [state, action] = useActionState<ActionResult, FormData>(saveClientAction, { ok: true });
+  const stages = useStages();
   const errors = (!state.ok && state.fieldErrors) || {};
   const input = (name: string) => cx("input", errors[name] && "input-error");
 
@@ -44,8 +45,8 @@ export function ClientForm({ id, initial, cancelHref, currency, timezone }: { id
             </select>
           </Field>
           <Field label="Pipeline stage" htmlFor="stage">
-            <select id="stage" name="stage" defaultValue={initial?.stage ?? "prospect"} className="select">
-              {STAGES.map((stage) => (
+            <select id="stage" name="stage" defaultValue={initial?.stage ?? stages[0]?.key} className="select">
+              {stages.map((stage) => (
                 <option key={stage.key} value={stage.key}>
                   {stage.label}
                 </option>

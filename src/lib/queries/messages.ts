@@ -18,8 +18,9 @@ export type Conversation = {
 /**
  * Lists conversations grouped per contact and channel, most recent first.
  * Conversations for known clients carry the client's name and stage.
+ * With `clientsOnly`, conversations from contacts not linked to a client are hidden.
  */
-export async function listConversations(options: { unreadOnly?: boolean; channel?: string; limit?: number } = {}): Promise<Conversation[]> {
+export async function listConversations(options: { unreadOnly?: boolean; channel?: string; clientsOnly?: boolean; limit?: number } = {}): Promise<Conversation[]> {
   const limit = options.limit ?? 200;
   const result = await db.execute(sql`
     with latest as (
@@ -46,6 +47,7 @@ export async function listConversations(options: { unreadOnly?: boolean; channel
     where 1 = 1
       ${options.unreadOnly ? sql`and c.unread_count > 0` : sql``}
       ${options.channel ? sql`and l.channel = ${options.channel}` : sql``}
+      ${options.clientsOnly ? sql`and l.client_id is not null` : sql``}
     order by l.sent_at desc
     limit ${limit}
   `);

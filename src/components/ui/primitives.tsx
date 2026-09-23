@@ -1,6 +1,5 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { getStage } from "@/lib/pipeline";
 
 export function cx(...classes: Array<string | false | null | undefined>): string {
   return classes.filter(Boolean).join(" ");
@@ -58,12 +57,7 @@ export function EmptyState({ title, description, action }: { title: string; desc
   );
 }
 
-export function StageChip({ stage, className }: { stage: string; className?: string }) {
-  const meta = getStage(stage);
-  const variant =
-    meta.key === "completed" ? "stage-completed" : meta.key === "lost" ? "stage-lost" : meta.group === "transaction" ? "stage-transaction" : meta.group === "active" ? "stage-active" : "stage-lead";
-  return <span className={cx("badge", variant, className)}>{meta.label}</span>;
-}
+export { StageChip } from "@/components/pipeline/stage-chip";
 
 export function ChannelTag({ channel, className }: { channel: string; className?: string }) {
   const label = channel === "email" ? "Email" : channel === "whatsapp" ? "WhatsApp" : channel;

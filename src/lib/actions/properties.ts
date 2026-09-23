@@ -9,6 +9,7 @@ import { LISTING_TYPES, PROPERTY_STATUSES, PROPERTY_TYPES } from "@/lib/constant
 import { db } from "@/lib/db";
 import { properties } from "@/lib/db/schema";
 import { fieldErrorsFrom, formNumber, formOptional, formString, type ActionResult } from "@/lib/validation";
+import { dispatchWorkflowEvent } from "@/lib/workflows/engine";
 
 const propertySchema = z.object({
   title: z.string().trim().min(1, "Title is required").max(200),
@@ -63,14 +64,21 @@ export async function savePropertyAction(_prev: ActionResult, formData: FormData
   const values = { ...parsed.data, listingUrl: parsed.data.listingUrl || null, price: parsed.data.price === null ? null : Math.round(parsed.data.price), updatedAt: new Date() };
 
   if (id) {
-    const [updated] = await db.update(properties).set(values).where(eq(properties.id, id)).returning({ id: properties.id });
+    const existing = await db.query.properties.findFirst({ where: eq(properties.id, id) });
+    if (!existing) return { ok: false, error: "Property not found" };
+    const [updated] = await db.update(properties).set(values).where(eq(properties.id, id)).returning();
     if (!updated) return { ok: false, error: "Property not found" };
+    await dispatchWorkflowEvent({ trigger: "property.updated", property: updated, extra: { previous_status: existing.status } });
+    if (existing.status !== updated.status) {
+      await dispatchWorkflowEvent({ trigger: "property.status_changed", property: updated, extra: { previous_status: existing.status } });
+    }
     revalidatePath("/properties");
     revalidatePath(`/properties/${id}`);
     redirect(`/properties/${id}`);
   }
 
-  const [created] = await db.insert(properties).values(values).returning({ id: properties.id });
+  const [created] = await db.insert(properties).values(values).returning();
+  await dispatchWorkflowEvent({ trigger: "property.created", property: created });
   revalidatePath("/properties");
   redirect(`/properties/${created.id}`);
 }

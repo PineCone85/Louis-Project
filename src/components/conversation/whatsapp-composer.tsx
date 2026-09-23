@@ -9,6 +9,7 @@ import { formatPhone } from "@/lib/phone";
 import type { ActionResult } from "@/lib/validation";
 import type { WhatsAppWindow } from "@/lib/whatsapp/send";
 import { SubmitButton } from "@/components/ui/form-controls";
+import { DraftButton } from "./draft-button";
 import { Field, cx } from "@/components/ui/primitives";
 
 type Props = {
@@ -20,6 +21,7 @@ type Props = {
   timezone: string;
   templates: Template[];
   renderContext: RenderContext["settings"];
+  aiEnabled: boolean;
   onSent: () => void;
 };
 
@@ -215,6 +217,7 @@ export function WhatsAppComposer(props: Props) {
           </div>
           <textarea name="text" className={cx("textarea min-h-24", errors.text && "input-error")} value={text} onChange={(e) => setText(e.target.value)} placeholder="Write a WhatsApp message" />
           {errors.text ? <p className="field-error">{errors.text}</p> : null}
+          {props.aiEnabled ? <DraftButton channel="whatsapp" contactAddress={phone} clientId={props.clientId} onDraft={(draft) => setText(draft.body)} /> : null}
           {!state.ok && state.error ? <p className="form-error">{state.error}</p> : null}
           <div className="flex items-center justify-between gap-3">
             <button type="button" className="text-[12px] font-medium text-ink-muted hover:text-ink" onClick={() => setShowTemplate(true)}>

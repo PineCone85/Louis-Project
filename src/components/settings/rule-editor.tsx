@@ -4,10 +4,11 @@ import { useActionState, useState } from "react";
 import { ArrowDown, ArrowUp } from "lucide-react";
 import { deleteRuleAction, moveRuleAction, saveRuleAction, toggleRuleAction } from "@/lib/actions/rules";
 import { saveAutomationAction } from "@/lib/actions/settings";
-import { AUTO_REPLY_AUDIENCES, AUTO_REPLY_TRIGGERS, labelFor } from "@/lib/constants";
+import { AUTO_REPLY_AUDIENCES, AUTO_REPLY_TRIGGERS, WEEKDAYS, labelFor, weekdayLabel } from "@/lib/constants";
 import type { Settings, Template } from "@/lib/db/schema";
-import { formatDateTime } from "@/lib/format";
-import { STAGES, stageLabel } from "@/lib/pipeline";
+import { formatDateTime, toDateTimeLocal } from "@/lib/format";
+import { stageLabel } from "@/lib/pipeline";
+import { useStages } from "@/components/pipeline/stages-provider";
 import type { RuleWithTemplate } from "@/lib/queries/templates";
 import type { ActionResult } from "@/lib/validation";
 import { ConfirmButton, SubmitButton } from "@/components/ui/form-controls";
@@ -43,7 +44,8 @@ export function AutomationToggles({ settings }: { settings: Settings }) {
   );
 }
 
-function RuleForm({ rule, templates, onClose }: { rule: RuleWithTemplate | null; templates: Template[]; onClose: () => void }) {
+function RuleForm({ rule, templates, timezone, onClose }: { rule: RuleWithTemplate | null; templates: Template[]; timezone: string; onClose: () => void }) {
+  const stages = useStages();
   const [state, action] = useActionState<ActionResult<{ saved: boolean }>, FormData>(
     async (previous, formData) => {
       const result = await saveRuleAction(previous, formData);
@@ -88,6 +90,48 @@ function RuleForm({ rule, templates, onClose }: { rule: RuleWithTemplate | null;
             ))}
           </select>
         </Field>
+        {trigger === "weekly" ? (
+          <>
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="From" htmlFor="rule-weekly-from-day" error={errors.weeklyFromDay}>
+                <select id="rule-weekly-from-day" name="weeklyFromDay" className="select" defaultValue={rule?.weekly?.fromDay ?? 5}>
+                  {WEEKDAYS.map((d) => (
+                    <option key={d.value} value={d.value}>
+                      {d.label}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="At" htmlFor="rule-weekly-from-time" error={errors.weeklyFromTime}>
+                <input id="rule-weekly-from-time" name="weeklyFromTime" type="time" defaultValue={rule?.weekly?.fromTime ?? "17:00"} className={cx("input", errors.weeklyFromTime && "input-error")} />
+              </Field>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="Until" htmlFor="rule-weekly-until-day" error={errors.weeklyUntilDay}>
+                <select id="rule-weekly-until-day" name="weeklyUntilDay" className="select" defaultValue={rule?.weekly?.untilDay ?? 1}>
+                  {WEEKDAYS.map((d) => (
+                    <option key={d.value} value={d.value}>
+                      {d.label}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="At" htmlFor="rule-weekly-until-time" error={errors.weeklyUntilTime} hint="Repeats every week, in your Settings time zone. The window may run past Sunday into the next week.">
+                <input id="rule-weekly-until-time" name="weeklyUntilTime" type="time" defaultValue={rule?.weekly?.untilTime ?? "08:00"} className={cx("input", errors.weeklyUntilTime && "input-error")} />
+              </Field>
+            </div>
+          </>
+        ) : null}
+        {trigger === "away" ? (
+          <>
+            <Field label="Away from" htmlFor="rule-away-from" error={errors.awayFrom}>
+              <input id="rule-away-from" name="awayFrom" type="datetime-local" defaultValue={toDateTimeLocal(rule?.awayFrom, timezone)} className={cx("input", errors.awayFrom && "input-error")} />
+            </Field>
+            <Field label="Back on" htmlFor="rule-away-until" error={errors.awayUntil} hint="Messages arriving between these times get the reply. Times are in your Settings time zone.">
+              <input id="rule-away-until" name="awayUntil" type="datetime-local" defaultValue={toDateTimeLocal(rule?.awayUntil, timezone)} className={cx("input", errors.awayUntil && "input-error")} />
+            </Field>
+          </>
+        ) : null}
         {trigger === "keyword" ? (
           <Field label="Keywords" htmlFor="rule-keywords" className="md:col-span-2" error={errors.keywords} hint="One per line or comma separated. Matched anywhere in the subject or message, ignoring case.">
             <textarea id="rule-keywords" name="keywords" defaultValue={(rule?.keywords ?? []).join("\n")} className={cx("textarea min-h-20", errors.keywords && "input-error")} />
@@ -109,7 +153,7 @@ function RuleForm({ rule, templates, onClose }: { rule: RuleWithTemplate | null;
         <div className="md:col-span-2">
           <span className="label">Only for clients in these stages</span>
           <div className="flex flex-wrap gap-2">
-            {STAGES.map((stage) => (
+            {stages.map((stage) => (
               <label key={stage.key} className="flex h-8 cursor-pointer items-center gap-2 rounded-sm border border-line-strong bg-paper px-2.5 text-[12px]">
                 <input type="checkbox" name="stages" value={stage.key} defaultChecked={rule?.stages.includes(stage.key) ?? false} className="checkbox" />
                 {stage.label}
@@ -140,7 +184,16 @@ function RuleForm({ rule, templates, onClose }: { rule: RuleWithTemplate | null;
   );
 }
 
+function AwayBadge({ state }: { state: RuleWithTemplate["awayState"] }) {
+  if (state === "missing") return <span className="badge badge-neutral">Dates missing</span>;
+  if (state === "scheduled") return <span className="badge badge-neutral">Scheduled</span>;
+  if (state === "ended") return <span className="badge badge-neutral">Ended</span>;
+  if (state === "active") return <span className="badge bg-sage-100 text-sage-900">Away now</span>;
+  return null;
+}
+
 export function RuleEditor({ rules, templates, timezone }: { rules: RuleWithTemplate[]; templates: Template[]; timezone: string }) {
+  const stages = useStages();
   const [editing, setEditing] = useState<string | "new" | null>(null);
 
   return (
@@ -154,7 +207,7 @@ export function RuleEditor({ rules, templates, timezone }: { rules: RuleWithTemp
         ) : null}
       </div>
       {templates.length === 0 ? <p className="form-error">Create a template first. Rules reply using your templates.</p> : null}
-      {editing === "new" ? <RuleForm rule={null} templates={templates} onClose={() => setEditing(null)} /> : null}
+      {editing === "new" ? <RuleForm rule={null} templates={templates} timezone={timezone} onClose={() => setEditing(null)} /> : null}
       <div className="panel">
         {rules.length === 0 && editing !== "new" ? (
           <EmptyState title="No rules yet" description="Add a rule such as: reply to the first email from a new contact with your enquiry acknowledgement template." />
@@ -163,7 +216,7 @@ export function RuleEditor({ rules, templates, timezone }: { rules: RuleWithTemp
             {rules.map((rule, index) => (
               <li key={rule.id} className="px-5 py-4">
                 {editing === rule.id ? (
-                  <RuleForm rule={rule} templates={templates} onClose={() => setEditing(null)} />
+                  <RuleForm rule={rule} templates={templates} timezone={timezone} onClose={() => setEditing(null)} />
                 ) : (
                   <div className="flex items-start gap-4">
                     <div className="flex flex-col gap-1 pt-0.5">
@@ -183,11 +236,14 @@ export function RuleEditor({ rules, templates, timezone }: { rules: RuleWithTemp
                         <h3 className={cx("text-[14px] font-semibold", rule.enabled ? "text-ink" : "text-ink-muted line-through")}>{rule.name}</h3>
                         <ChannelTag channel={rule.channel} />
                         {!rule.enabled ? <span className="badge badge-neutral">Paused</span> : null}
+                        {rule.enabled && rule.triggerType === "away" ? <AwayBadge state={rule.awayState} /> : null}
                       </div>
                       <p className="mt-1 text-[13px] text-ink-muted">
                         {labelFor(AUTO_REPLY_TRIGGERS, rule.triggerType)}
-                        {rule.triggerType === "keyword" && rule.keywords.length > 0 ? ` (${rule.keywords.join(", ")})` : ""} · {labelFor(AUTO_REPLY_AUDIENCES, rule.applyTo)}
-                        {rule.stages.length > 0 ? ` · Stages: ${rule.stages.map(stageLabel).join(", ")}` : ""}
+                        {rule.triggerType === "keyword" && rule.keywords.length > 0 ? ` (${rule.keywords.join(", ")})` : ""}
+                        {rule.triggerType === "weekly" && rule.weekly ? ` (${weekdayLabel(rule.weekly.fromDay, true)} ${rule.weekly.fromTime} to ${weekdayLabel(rule.weekly.untilDay, true)} ${rule.weekly.untilTime})` : ""}
+                        {rule.triggerType === "away" && rule.awayFrom && rule.awayUntil ? ` (${formatDateTime(rule.awayFrom, timezone)} to ${formatDateTime(rule.awayUntil, timezone)})` : ""} · {labelFor(AUTO_REPLY_AUDIENCES, rule.applyTo)}
+                        {rule.stages.length > 0 ? ` · Stages: ${rule.stages.map((key) => stageLabel(stages, key)).join(", ")}` : ""}
                       </p>
                       <p className="mt-0.5 text-[12px] text-ink-faint">
                         Template: {rule.template?.name ?? "Missing"} · Cooldown {rule.cooldownHours}h

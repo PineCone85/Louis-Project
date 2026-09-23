@@ -32,6 +32,8 @@ type Props = {
   renderContext: RenderContext["settings"];
   gmail: { connected: boolean };
   whatsapp: { configured: boolean; window: WhatsAppWindow | null };
+  /** Whether AI reply drafting is available (ANTHROPIC_API_KEY set). */
+  ai?: { configured: boolean };
   templates: Template[];
   defaultChannel?: "email" | "whatsapp";
   compact?: boolean;
@@ -160,6 +162,7 @@ export function Timeline(props: Props) {
               signature={props.emailSignature}
               templates={props.templates.filter((t) => t.channel === "any" || t.channel === "email")}
               renderContext={props.renderContext}
+              aiEnabled={props.ai?.configured ?? false}
               onSent={() => handleSent("Email sent")}
             />
           ) : (
@@ -173,6 +176,7 @@ export function Timeline(props: Props) {
               timezone={props.timezone}
               templates={props.templates.filter((t) => t.channel === "any" || t.channel === "whatsapp")}
               renderContext={props.renderContext}
+              aiEnabled={props.ai?.configured ?? false}
               onSent={() => handleSent("WhatsApp message sent")}
             />
           )}

@@ -89,8 +89,9 @@ export default async function ClientPage({ params }: { params: Promise<{ id: str
               timezone={settings.timezone}
               emailSignature={settings.emailSignature}
               renderContext={{ agentName: settings.agentName, agencyName: settings.agencyName, agentPhone: settings.agentPhone }}
-              gmail={{ connected: Boolean(gmail) }}
-              whatsapp={{ configured: env.whatsapp.configured, window: whatsappWindow }}
+              gmail={{ connected: Boolean(gmail) || env.demo }}
+              whatsapp={{ configured: env.whatsapp.configured || env.demo, window: whatsappWindow }}
+              ai={{ configured: env.anthropic.configured }}
               templates={templates}
             />
           </div>

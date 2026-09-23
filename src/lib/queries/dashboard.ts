@@ -1,8 +1,9 @@
 import { and, asc, desc, eq, isNull, lte, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { activities, clients } from "@/lib/db/schema";
-import { ACTIVE_STAGE_KEYS } from "@/lib/pipeline";
+import { activeStageKeys, transactionStageKeys } from "@/lib/pipeline";
 import { listClients, type ClientListItem } from "./clients";
+import { getStages } from "./settings";
 
 export type DashboardData = {
   activeClients: number;
@@ -25,11 +26,15 @@ export type DashboardData = {
 };
 
 export async function getDashboardData(): Promise<DashboardData> {
+  const stages = await getStages();
+  const active = activeStageKeys(stages);
+  const transaction = transactionStageKeys(stages);
+  const inList = (keys: string[]) => (keys.length > 0 ? sql`${clients.stage} in ${keys}` : sql`false`);
   const [counts] = await db
     .select({
-      active: sql<number>`count(*) filter (where ${clients.stage} in ${ACTIVE_STAGE_KEYS})::int`,
+      active: sql<number>`count(*) filter (where ${inList(active)})::int`,
       newThisWeek: sql<number>`count(*) filter (where ${clients.createdAt} > now() - interval '7 days')::int`,
-      inTransaction: sql<number>`count(*) filter (where ${clients.stage} in ('offer_submitted','negotiation','offer_accepted','closing'))::int`,
+      inTransaction: sql<number>`count(*) filter (where ${inList(transaction)})::int`,
     })
     .from(clients)
     .where(isNull(clients.archivedAt));
@@ -61,7 +66,7 @@ export async function getDashboardData(): Promise<DashboardData> {
     .where(
       and(
         isNull(clients.archivedAt),
-        sql`${clients.stage} in ${ACTIVE_STAGE_KEYS}`,
+        inList(active),
         lte(sql`coalesce(${clients.lastContactAt}, ${clients.createdAt})`, sql`now() - interval '14 days'`),
       ),
     )

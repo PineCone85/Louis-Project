@@ -13,7 +13,16 @@ export async function getTemplate(id: string): Promise<Template | null> {
   return row ?? null;
 }
 
-export type RuleWithTemplate = AutoReplyRule & { template: Template | null };
+export type AwayState = "scheduled" | "active" | "ended" | "missing";
+export type RuleWithTemplate = AutoReplyRule & { template: Template | null; awayState: AwayState | null };
+
+function awayStateFor(rule: AutoReplyRule, now: number): AwayState | null {
+  if (rule.triggerType !== "away") return null;
+  if (!rule.awayFrom || !rule.awayUntil) return "missing";
+  if (now < rule.awayFrom.getTime()) return "scheduled";
+  if (now > rule.awayUntil.getTime()) return "ended";
+  return "active";
+}
 
 export async function listRules(): Promise<RuleWithTemplate[]> {
   const rows = await db
@@ -21,7 +30,8 @@ export async function listRules(): Promise<RuleWithTemplate[]> {
     .from(autoReplyRules)
     .leftJoin(templates, eq(autoReplyRules.templateId, templates.id))
     .orderBy(asc(autoReplyRules.position), desc(autoReplyRules.createdAt));
-  return rows.map((row) => ({ ...row.rule, template: row.template }));
+  const now = Date.now();
+  return rows.map((row) => ({ ...row.rule, template: row.template, awayState: awayStateFor(row.rule, now) }));
 }
 
 export async function getRule(id: string): Promise<AutoReplyRule | null> {

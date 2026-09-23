@@ -1,7 +1,7 @@
 import { and, asc, eq, gt } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { autoReplyLog, autoReplyRules, templates, type AutoReplyRule, type Client, type Message, type Settings } from "@/lib/db/schema";
-import { isWithinBusinessHours } from "@/lib/business-hours";
+import { isWithinBusinessHours, isWithinWeeklyWindow } from "@/lib/business-hours";
 import { logActivity } from "@/lib/messaging/activity";
 import { renderTemplate, withSignature } from "./render";
 
@@ -32,6 +32,13 @@ export function ruleMatches(rule: AutoReplyRule, ctx: Omit<AutoReplyContext, "se
     }
     case "outside_hours":
       return !isWithinBusinessHours(ctx.now ?? ctx.message.sentAt, ctx.settings.businessHours, ctx.settings.timezone);
+    case "weekly":
+      return Boolean(rule.weekly) && isWithinWeeklyWindow(ctx.now ?? ctx.message.sentAt, rule.weekly!, ctx.settings.timezone);
+    case "away": {
+      if (!rule.awayFrom || !rule.awayUntil) return false;
+      const at = (ctx.now ?? ctx.message.sentAt).getTime();
+      return at >= rule.awayFrom.getTime() && at <= rule.awayUntil.getTime();
+    }
     default:
       return false;
   }

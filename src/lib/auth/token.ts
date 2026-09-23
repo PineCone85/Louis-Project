@@ -23,7 +23,7 @@ export async function verifySessionToken(token: string): Promise<Session | null>
   try {
     const { payload } = await jwtVerify(token, secretKey(), { algorithms: ["HS256"] });
     if (typeof payload.sub !== "string") return null;
-    if (payload.sub.toLowerCase() !== env.adminEmail) return null;
+    if (!env.userByEmail(payload.sub)) return null;
     return { email: payload.sub, issuedAt: payload.iat ?? 0 };
   } catch {
     return null;

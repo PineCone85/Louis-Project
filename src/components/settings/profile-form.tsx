@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 import { saveProfileAction } from "@/lib/actions/settings";
+import { hoursForDay } from "@/lib/business-hours";
 import type { Settings } from "@/lib/db/schema";
 import type { ActionResult } from "@/lib/validation";
 import { SubmitButton } from "@/components/ui/form-controls";
@@ -60,23 +61,41 @@ export function ProfileForm({ settings }: { settings: Settings }) {
             <input id="currency" name="currency" defaultValue={settings.currency} maxLength={3} className={cx(input("currency"), "uppercase")} />
           </Field>
           <div className="md:col-span-3">
-            <span className="label">Business days</span>
-            <div className="flex flex-wrap gap-2">
-              {DAYS.map((day) => (
-                <label key={day.value} className="flex h-9 cursor-pointer items-center gap-2 rounded-sm border border-line-strong bg-paper px-3 text-[13px]">
-                  <input type="checkbox" name="businessDays" value={day.value} defaultChecked={settings.businessHours.days.includes(day.value)} className="checkbox" />
-                  {day.label}
-                </label>
-              ))}
+            <span className="label">Business hours</span>
+            <div className="overflow-x-auto rounded-sm border border-line-strong bg-paper">
+              <table className="w-full text-[13px]">
+                <thead>
+                  <tr className="border-b border-line text-left text-[11px] font-medium tracking-wide text-ink-muted uppercase">
+                    <th className="px-3 py-2">Day</th>
+                    <th className="px-3 py-2">Opens</th>
+                    <th className="px-3 py-2">Closes</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-line">
+                  {DAYS.map((day) => {
+                    const hours = hoursForDay(settings.businessHours, day.value);
+                    return (
+                      <tr key={day.value}>
+                        <td className="px-3 py-1.5">
+                          <label className="flex cursor-pointer items-center gap-2">
+                            <input type="checkbox" name={`businessDay_${day.value}`} defaultChecked={Boolean(hours)} className="checkbox" />
+                            {day.label}
+                          </label>
+                        </td>
+                        <td className="px-3 py-1.5">
+                          <input type="time" name={`businessStart_${day.value}`} defaultValue={hours?.start ?? settings.businessHours.start} aria-label={`${day.label} opens`} className={cx("input h-8 w-32", errors[`businessStart_${day.value}`] && "input-error")} />
+                        </td>
+                        <td className="px-3 py-1.5">
+                          <input type="time" name={`businessEnd_${day.value}`} defaultValue={hours?.end ?? settings.businessHours.end} aria-label={`${day.label} closes`} className={cx("input h-8 w-32", errors[`businessEnd_${day.value}`] && "input-error")} />
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
+            <p className="mt-1.5 text-[12px] text-ink-faint">Untick a day to mark it closed. Each day can have its own hours. Used by the &ldquo;outside business hours&rdquo; automatic reply trigger.</p>
           </div>
-          <Field label="Opens" htmlFor="businessStart" error={errors.businessStart}>
-            <input id="businessStart" name="businessStart" type="time" defaultValue={settings.businessHours.start} className={input("businessStart")} />
-          </Field>
-          <Field label="Closes" htmlFor="businessEnd" error={errors.businessEnd}>
-            <input id="businessEnd" name="businessEnd" type="time" defaultValue={settings.businessHours.end} className={input("businessEnd")} />
-          </Field>
-          <p className="self-end pb-2 text-[12px] text-ink-faint md:col-span-1">Used by the &ldquo;outside business hours&rdquo; automatic reply trigger.</p>
         </div>
       </section>
 

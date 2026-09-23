@@ -33,7 +33,8 @@ export async function loginAction(_prev: LoginState, formData: FormData): Promis
 
   let valid = false;
   try {
-    valid = email === env.adminEmail && verifyPassword(password, env.adminPasswordHash);
+    const user = env.userByEmail(email);
+    valid = Boolean(user) && verifyPassword(password, user!.passwordHash);
   } catch (error) {
     console.error("[auth] configuration error:", error);
     return { error: "The administrator account is not configured. Set ADMIN_EMAIL and ADMIN_PASSWORD_HASH.", email };

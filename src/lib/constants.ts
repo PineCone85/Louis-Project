@@ -66,6 +66,8 @@ export const AUTO_REPLY_TRIGGERS = [
   { key: "new_contact", label: "First message from a contact", description: "Reply only to the first message ever received from a sender." },
   { key: "keyword", label: "Message contains keywords", description: "Reply when the subject or body contains any of the keywords." },
   { key: "outside_hours", label: "Outside business hours", description: "Reply when a message arrives outside the business hours set in Settings." },
+  { key: "weekly", label: "Every week between", description: "Reply during a window that repeats every week, for example Friday evening to Monday morning." },
+  { key: "away", label: "Away between dates", description: "Reply to messages that arrive during an away period, such as a holiday. The rule switches itself off when the period ends." },
 ] as const;
 
 export const AUTO_REPLY_AUDIENCES = [
@@ -86,4 +88,19 @@ export const TEMPLATE_PLACEHOLDERS = [
 export function labelFor<T extends readonly { key: string; label: string }[]>(list: T, key: string | null | undefined): string {
   if (!key) return "";
   return list.find((item) => item.key === key)?.label ?? key;
+}
+
+export const WEEKDAYS = [
+  { value: 1, label: "Monday", short: "Mon" },
+  { value: 2, label: "Tuesday", short: "Tue" },
+  { value: 3, label: "Wednesday", short: "Wed" },
+  { value: 4, label: "Thursday", short: "Thu" },
+  { value: 5, label: "Friday", short: "Fri" },
+  { value: 6, label: "Saturday", short: "Sat" },
+  { value: 0, label: "Sunday", short: "Sun" },
+] as const;
+
+export function weekdayLabel(value: number, short = false): string {
+  const day = WEEKDAYS.find((d) => d.value === value);
+  return day ? (short ? day.short : day.label) : String(value);
 }

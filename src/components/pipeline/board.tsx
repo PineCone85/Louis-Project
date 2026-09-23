@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
 import { changeStageAction } from "@/lib/actions/clients";
 import { daysSince, formatCurrency, fullName } from "@/lib/format";
-import { STAGES } from "@/lib/pipeline";
+import { useStages } from "@/components/pipeline/stages-provider";
 import type { PipelineClient } from "@/lib/queries/clients";
 import { cx } from "@/components/ui/primitives";
 
@@ -13,6 +13,7 @@ type Props = { clients: PipelineClient[]; currency: string };
 
 export function PipelineBoard({ clients, currency }: Props) {
   const router = useRouter();
+  const stages = useStages();
   const [items, setItems] = useState(clients);
   const [dragging, setDragging] = useState<string | null>(null);
   const [over, setOver] = useState<string | null>(null);
@@ -21,10 +22,10 @@ export function PipelineBoard({ clients, currency }: Props) {
 
   const grouped = useMemo(() => {
     const map = new Map<string, PipelineClient[]>();
-    for (const stage of STAGES) map.set(stage.key, []);
+    for (const stage of stages) map.set(stage.key, []);
     for (const client of items) map.get(client.stage)?.push(client);
     return map;
-  }, [items]);
+  }, [items, stages]);
 
   const move = (clientId: string, stage: string) => {
     const current = items.find((c) => c.id === clientId);
@@ -37,7 +38,7 @@ export function PipelineBoard({ clients, currency }: Props) {
     });
   };
 
-  const visibleStages = STAGES.filter((stage) => showClosed || stage.group !== "closed");
+  const visibleStages = stages.filter((stage) => showClosed || stage.group !== "closed");
 
   return (
     <div className="space-y-3">
@@ -120,7 +121,7 @@ export function PipelineBoard({ clients, currency }: Props) {
                           value={client.stage}
                           onChange={(event) => move(client.id, event.target.value)}
                         >
-                          {STAGES.map((option) => (
+                          {stages.map((option) => (
                             <option key={option.key} value={option.key}>
                               {option.label}
                             </option>

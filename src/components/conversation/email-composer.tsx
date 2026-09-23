@@ -7,6 +7,7 @@ import type { Template } from "@/lib/db/schema";
 import { replySubject } from "@/lib/gmail/mime";
 import type { ActionResult } from "@/lib/validation";
 import { SubmitButton } from "@/components/ui/form-controls";
+import { DraftButton } from "./draft-button";
 import { Field, cx } from "@/components/ui/primitives";
 
 export type EmailThreadOption = { threadId: string; subject: string; lastAt: Date };
@@ -22,6 +23,7 @@ type Props = {
   signature: string;
   templates: Template[];
   renderContext: RenderContext["settings"];
+  aiEnabled: boolean;
   onSent: () => void;
 };
 
@@ -44,6 +46,7 @@ export function EmailComposer(props: Props) {
   }
   const [body, setBody] = useState(() => withSignature("", props.signature).replace(/^\n+/, "\n\n"));
   const [templateId, setTemplateId] = useState("");
+  const [to, setTo] = useState(props.emails[0] ?? "");
   const errors = (!state.ok && state.fieldErrors) || {};
 
   const context = useMemo<RenderContext>(
@@ -68,7 +71,7 @@ export function EmailComposer(props: Props) {
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         <Field label="To" htmlFor="email-to" error={errors.to}>
           {props.emails.length > 1 ? (
-            <select id="email-to" name="to" className="select" defaultValue={props.emails[0]}>
+            <select id="email-to" name="to" className="select" value={to} onChange={(e) => setTo(e.target.value)}>
               {props.emails.map((email) => (
                 <option key={email} value={email}>
                   {email}
@@ -76,7 +79,7 @@ export function EmailComposer(props: Props) {
               ))}
             </select>
           ) : (
-            <input id="email-to" name="to" type="email" className="input" defaultValue={props.emails[0] ?? ""} readOnly={props.emails.length === 1} />
+            <input id="email-to" name="to" type="email" className="input" value={to} onChange={(e) => setTo(e.target.value)} readOnly={props.emails.length === 1} />
           )}
         </Field>
         <Field label="Conversation" htmlFor="email-thread">
@@ -117,6 +120,17 @@ export function EmailComposer(props: Props) {
         <textarea id="email-body" name="body" className={cx("textarea min-h-40", errors.body && "input-error")} value={body} onChange={(e) => setBody(e.target.value)} />
         {errors.body ? <p className="field-error">{errors.body}</p> : null}
       </div>
+      {props.aiEnabled ? (
+        <DraftButton
+          channel="email"
+          contactAddress={to}
+          clientId={props.clientId}
+          onDraft={(draft) => {
+            setBody(withSignature(draft.body, props.signature));
+            if (draft.subject && !thread) setSubject(draft.subject);
+          }}
+        />
+      ) : null}
       {!state.ok && state.error ? <p className="form-error">{state.error}</p> : null}
       <div className="flex items-center justify-between gap-3">
         <span className="text-[12px] text-ink-faint">Sent through your connected Gmail account and saved to the timeline.</span>

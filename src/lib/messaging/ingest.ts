@@ -6,6 +6,7 @@ import { sanitizeEmailHtml } from "@/lib/sanitize";
 import { truncate } from "@/lib/format";
 import { waIdToPhone } from "@/lib/phone";
 import { evaluateAutoReply } from "@/lib/auto-reply/engine";
+import { dispatchWorkflowEvent } from "@/lib/workflows/engine";
 import { findClientByEmail, findClientByPhone } from "./matching";
 import { createNotification } from "./notifications";
 
@@ -113,6 +114,15 @@ export async function ingestEmail(input: IngestEmailInput): Promise<IngestResult
       settings,
       safeToReply: !isAutomatedEmail(parsed),
     });
+    await dispatchWorkflowEvent({
+      trigger: "message.received",
+      client,
+      message: inserted,
+      contact: { name: counterpart.name, address: counterpart.address },
+      extra: { is_new_contact: isNewContact, safe_to_reply: !isAutomatedEmail(parsed) },
+    });
+  } else if (direction === "outbound" && !input.historical && client) {
+    await dispatchWorkflowEvent({ trigger: "message.sent", client, message: inserted, contact: { name: counterpart.name, address: counterpart.address } });
   }
 
   return { message: inserted, created: true, client };
@@ -182,6 +192,13 @@ export async function ingestWhatsApp(input: IngestWhatsAppInput): Promise<Ingest
     isNewContact,
     settings: input.settings,
     safeToReply: input.type !== "reaction",
+  });
+  await dispatchWorkflowEvent({
+    trigger: "message.received",
+    client,
+    message: inserted,
+    contact: { name: input.profileName, address: phone },
+    extra: { is_new_contact: isNewContact, safe_to_reply: input.type !== "reaction" },
   });
 
   return { message: inserted, created: true, client };

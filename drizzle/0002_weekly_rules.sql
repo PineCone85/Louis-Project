@@ -1,0 +1,1 @@
+ALTER TABLE "auto_reply_rules" ADD COLUMN "weekly" jsonb;

@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { settings, type Settings } from "@/lib/db/schema";
+import { DEFAULT_STAGES, normalizeStages, type Stage } from "@/lib/pipeline";
 
 /** Returns the single settings row, creating it with defaults on first use. */
 export async function getSettings(): Promise<Settings> {
@@ -11,4 +12,13 @@ export async function getSettings(): Promise<Settings> {
   const again = await db.query.settings.findFirst({ where: eq(settings.id, 1) });
   if (!again) throw new Error("Unable to initialise settings");
   return again;
+}
+
+/** The pipeline stages configured on a settings row, falling back to the defaults. */
+export function stagesFrom(row: Pick<Settings, "pipelineStages">): Stage[] {
+  return normalizeStages(row.pipelineStages) ?? DEFAULT_STAGES;
+}
+
+export async function getStages(): Promise<Stage[]> {
+  return stagesFrom(await getSettings());
 }

@@ -17,13 +17,32 @@ import { Avatar, ChannelTag, EmptyState, PageBody, PageHeader, StageChip, cx } f
 
 export const metadata = { title: "Inbox" };
 
-type Search = { filter?: string; channel?: string; c?: string };
+type Search = { filter?: string; channel?: string; who?: string; c?: string };
 
 export default async function InboxPage({ searchParams }: { searchParams: Promise<Search> }) {
   const params = await searchParams;
   const unreadOnly = params.filter === "unread";
   const channel = params.channel === "email" || params.channel === "whatsapp" ? params.channel : undefined;
-  const [conversations, settings, gmail, templates] = await Promise.all([listConversations({ unreadOnly, channel }), getSettings(), getGmailAccount(), listTemplates()]);
+  const clientsOnly = params.who === "clients";
+  const [conversations, settings, gmail, templates] = await Promise.all([
+    listConversations({ unreadOnly, channel, clientsOnly }),
+    getSettings(),
+    getGmailAccount(),
+    listTemplates(),
+  ]);
+
+  /** Query string for the currently active filters, used to keep them when navigating. */
+  const activeFilters: Record<string, string | undefined> = {
+    filter: unreadOnly ? "unread" : undefined,
+    channel,
+    who: clientsOnly ? "clients" : undefined,
+  };
+  const listHref = (extra: Record<string, string | undefined> = {}) => {
+    const search = new URLSearchParams();
+    for (const [key, value] of Object.entries({ ...activeFilters, ...extra })) if (value) search.set(key, value);
+    const qs = search.toString();
+    return `/inbox${qs ? `?${qs}` : ""}`;
+  };
 
   const selectedKey = params.c ?? null;
   const selected = selectedKey ? conversations.find((c) => c.key === selectedKey) ?? null : null;
@@ -43,13 +62,9 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
   }
 
   const filterLink = (label: string, query: Record<string, string | undefined>, active: boolean) => {
-    const search = new URLSearchParams();
-    for (const [key, value] of Object.entries(query)) if (value) search.set(key, value);
-    if (params.c) search.set("c", params.c);
-    const qs = search.toString();
     return (
       <Link
-        href={`/inbox${qs ? `?${qs}` : ""}`}
+        href={listHref({ ...query, c: params.c })}
         className={cx("btn btn-sm", active ? "border-sage-300 bg-sage-100 text-sage-900 hover:bg-sage-100" : "btn-secondary")}
         aria-current={active ? "true" : undefined}
       >
@@ -74,21 +89,26 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
       <PageBody>
         {selected ? <RefreshCounts /> : null}
         <div className="mb-4 flex flex-wrap items-center gap-2">
-          {filterLink("All", { channel }, !unreadOnly)}
-          {filterLink("Unread", { filter: "unread", channel }, unreadOnly)}
+          {filterLink("All", { filter: undefined }, !unreadOnly)}
+          {filterLink("Unread", { filter: "unread" }, unreadOnly)}
           <span className="mx-1 h-5 w-px bg-line" />
-          {filterLink("Email and WhatsApp", { filter: unreadOnly ? "unread" : undefined }, !channel)}
-          {filterLink("Email", { filter: unreadOnly ? "unread" : undefined, channel: "email" }, channel === "email")}
-          {filterLink("WhatsApp", { filter: unreadOnly ? "unread" : undefined, channel: "whatsapp" }, channel === "whatsapp")}
+          {filterLink("Email and WhatsApp", { channel: undefined }, !channel)}
+          {filterLink("Email", { channel: "email" }, channel === "email")}
+          {filterLink("WhatsApp", { channel: "whatsapp" }, channel === "whatsapp")}
+          <span className="mx-1 h-5 w-px bg-line" />
+          {filterLink("Everyone", { who: undefined }, !clientsOnly)}
+          {filterLink("Clients only", { who: "clients" }, clientsOnly)}
         </div>
 
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-5">
           <div className={cx("panel overflow-hidden xl:col-span-2", selected && "max-xl:hidden")}>
             {conversations.length === 0 ? (
               <EmptyState
-                title={unreadOnly ? "Nothing unread" : "No conversations yet"}
+                title={unreadOnly ? "Nothing unread" : clientsOnly ? "No client conversations" : "No conversations yet"}
                 description={
-                  gmail || env.whatsapp.configured
+                  clientsOnly
+                    ? "Only conversations linked to a client are shown. Switch to Everyone to see all contacts."
+                    : gmail || env.whatsapp.configured
                     ? "Messages from clients will appear here as they arrive."
                     : "Connect Gmail or configure WhatsApp in Settings to start receiving client messages."
                 }
@@ -96,15 +116,11 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
             ) : (
               <ul className="scrollbar-thin max-h-[calc(100vh-16rem)] divide-y divide-line overflow-y-auto">
                 {conversations.map((conversation) => {
-                  const search = new URLSearchParams();
-                  if (params.filter) search.set("filter", params.filter);
-                  if (params.channel) search.set("channel", params.channel);
-                  search.set("c", conversation.key);
                   const name = conversation.clientName ?? conversation.contactName ?? (conversation.channel === "whatsapp" ? formatPhone(conversation.contactAddress) : conversation.contactAddress);
                   const isSelected = selected?.key === conversation.key;
                   return (
                     <li key={conversation.key}>
-                      <Link href={`/inbox?${search.toString()}`} className={cx("flex gap-3 px-4 py-3 transition-colors hover:bg-sage-50/60", isSelected && "bg-sage-50")}>
+                      <Link href={listHref({ c: conversation.key })} className={cx("flex gap-3 px-4 py-3 transition-colors hover:bg-sage-50/60", isSelected && "bg-sage-50")}>
                         <Avatar name={name} size="sm" />
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center justify-between gap-2">
@@ -135,7 +151,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
               <div className="space-y-4">
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0">
-                    <Link href={`/inbox${params.filter || params.channel ? `?${new URLSearchParams({ ...(params.filter ? { filter: params.filter } : {}), ...(params.channel ? { channel: params.channel } : {}) }).toString()}` : ""}`} className="text-[12px] font-medium text-ink-muted hover:text-ink xl:hidden">
+                    <Link href={listHref()} className="text-[12px] font-medium text-ink-muted hover:text-ink xl:hidden">
                       Back to conversations
                     </Link>
                     <h2 className="truncate font-serif text-[22px] leading-tight text-ink">
@@ -172,8 +188,9 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
                   timezone={settings.timezone}
                   emailSignature={settings.emailSignature}
                   renderContext={{ agentName: settings.agentName, agencyName: settings.agencyName, agentPhone: settings.agentPhone }}
-                  gmail={{ connected: Boolean(gmail) }}
-                  whatsapp={{ configured: env.whatsapp.configured, window: whatsappWindow }}
+                  gmail={{ connected: Boolean(gmail) || env.demo }}
+                  whatsapp={{ configured: env.whatsapp.configured || env.demo, window: whatsappWindow }}
+                  ai={{ configured: env.anthropic.configured }}
                   templates={templates}
                   defaultChannel={selected.channel}
                   compact

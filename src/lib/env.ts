@@ -41,6 +41,30 @@ export const env = {
   get adminPasswordHash(): string {
     return required("ADMIN_PASSWORD_HASH");
   },
+  /**
+   * Everyone who may sign in: the admin plus any entries in ADDITIONAL_USERS,
+   * a comma-separated list of `email:scrypt:...` pairs (see `npm run auth:user`).
+   * All users share the same CRM data.
+   */
+  get users(): Array<{ email: string; passwordHash: string }> {
+    const list = [{ email: required("ADMIN_EMAIL").toLowerCase(), passwordHash: required("ADMIN_PASSWORD_HASH") }];
+    const extra = read("ADDITIONAL_USERS") ?? "";
+    for (const entry of extra.split(/[,\n]+/)) {
+      const trimmed = entry.trim();
+      if (!trimmed) continue;
+      const at = trimmed.indexOf(":");
+      if (at <= 0) continue;
+      const email = trimmed.slice(0, at).trim().toLowerCase();
+      const passwordHash = trimmed.slice(at + 1).trim();
+      if (email && passwordHash && !list.some((u) => u.email === email)) list.push({ email, passwordHash });
+    }
+    return list;
+  },
+  /** Finds a sign-in user by email (case-insensitive). */
+  userByEmail(email: string): { email: string; passwordHash: string } | null {
+    const wanted = email.trim().toLowerCase();
+    return this.users.find((u) => u.email === wanted) ?? null;
+  },
   get cronSecret(): string | undefined {
     return read("CRON_SECRET");
   },
@@ -59,6 +83,19 @@ export const env = {
     },
     get pushToken(): string | undefined {
       return read("GMAIL_PUSH_TOKEN");
+    },
+  },
+  anthropic: {
+    get apiKey(): string | undefined {
+      return read("ANTHROPIC_API_KEY");
+    },
+    /** Demo mode: serve pre-written drafts instead of calling the API. */
+    get demo(): boolean {
+      return read("AI_DRAFT_DEMO") === "true";
+    },
+    /** True when AI reply drafting is available (live key or demo mode). */
+    get configured(): boolean {
+      return Boolean(read("ANTHROPIC_API_KEY")) || read("AI_DRAFT_DEMO") === "true";
     },
   },
   whatsapp: {
@@ -86,6 +123,14 @@ export const env = {
         read("WHATSAPP_PHONE_NUMBER_ID") && read("WHATSAPP_ACCESS_TOKEN") && read("WHATSAPP_VERIFY_TOKEN"),
       );
     },
+  },
+  /**
+   * Demo mode (FOYER_DEMO=true): the reply composers are shown without Gmail
+   * or WhatsApp connected, and sending records the message without calling
+   * the external APIs. Used by `npm run demo`.
+   */
+  get demo(): boolean {
+    return read("FOYER_DEMO") === "true";
   },
   get isProduction(): boolean {
     return process.env.NODE_ENV === "production";

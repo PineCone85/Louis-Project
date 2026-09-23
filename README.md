@@ -80,8 +80,11 @@ Add these in **Settings > Environment Variables** (see `.env.example` for descri
 | `DATABASE_URL` | yes | Postgres connection string |
 | `ADMIN_EMAIL` | yes | The agent's login email |
 | `ADMIN_PASSWORD_HASH` | yes | Output of `npm run auth:hash -- "password"` |
+| `ADDITIONAL_USERS` | no | Extra sign-ins that share the same data, as comma-separated `email:hash` pairs. Generate an entry with `npm run auth:user -- "email" "password"` |
 | `AUTH_SECRET` | yes | `openssl rand -base64 48` |
 | `CRON_SECRET` | yes | Any random string; Vercel Cron sends it automatically |
+| `ANTHROPIC_API_KEY` | no | Enables the **Draft with AI** button in the reply composer (Claude drafts replies from the client record, linked properties and the thread) |
+| `ANTHROPIC_MODEL` | no | Override the Claude model used for drafts (default `claude-opus-5`) |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | for Gmail | From Google Cloud |
 | `GMAIL_PUBSUB_TOPIC`, `GMAIL_PUSH_TOKEN` | optional | Instant Gmail notifications |
 | `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_BUSINESS_ACCOUNT_ID`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_APP_SECRET`, `WHATSAPP_VERIFY_TOKEN` | for WhatsApp | From Meta for Developers |
@@ -117,7 +120,22 @@ WhatsApp rules to keep in mind: you can send free-form messages only within 24 h
 
 ## Automatic replies
 
-Settings > Templates holds the reply content. Settings > Automatic replies has master switches per channel and an ordered rule list. For each incoming message the rules are checked in order and the first match sends its template; cooldowns prevent repeated replies to the same contact, and email rules can be limited to one reply per conversation. Replies are never sent to mailing lists, bulk mail, bounces or no-reply addresses, and never for mail that pre-dates the Gmail connection.
+Settings > Templates holds the reply content. Settings > Automatic replies has master switches per channel and an ordered rule list. For each incoming message the rules are checked in order and the first match sends its template; cooldowns prevent repeated replies to the same contact, and email rules can be limited to one reply per conversation. Triggers: every message, first message from a contact, keywords, outside business hours, an away period between two dates (a holiday reply that switches itself off when you are back), or a window that repeats every week (for example Friday 17:30 to Monday 08:00). Business hours can differ per weekday. Replies are never sent to mailing lists, bulk mail, bounces or no-reply addresses, and never for mail that pre-dates the Gmail connection.
+
+## Workflows
+
+Settings > Workflows lets you automate almost anything in Foyer with "when X happens, if Y, then do Z" rules.
+
+- **Triggers:** a client is added, changes stage, or has an activity logged; a follow-up becomes due; a client goes quiet; a property is added, edited, changes status, is linked to a client, or a client's interest in it changes; a message is received; you send a message.
+- **Conditions:** any field of the client, property, message or link, with operators such as is, contains, is one of, at least and at most. Match all or any.
+- **Actions**, run in order: **AI: draft a message** (to the client in the event, to clients who match the property, or to clients already linked to it), **Send a template**, **Notify me**, **Add a note**, **Schedule a follow-up**, **Move the client to a stage**, **Link the property to matching clients**, **Change the property's status**, and **Call a webhook** (JSON, HMAC-signed).
+- **Drafts:** AI-written messages are never sent automatically. They land on the **Drafts** page with the reason they were written and a "check before sending" note; edit, send or dismiss each one.
+- **Recipes** give you one-click starting points, for example "New listing → AI drafts for matching clients". The matcher scores clients on budget, preferred areas, bedrooms and requested features.
+- Time-based triggers (follow-up due, gone quiet) are checked whenever messages are synced, including by the cron job. Every run is logged with what each step did.
+
+## Pipeline
+
+Settings > Pipeline lets you rename, reorder, add and remove the stages clients move through. Each stage belongs to a group (Lead, Active, Transaction, Closed) that drives the dashboard counts, the board and the stage colours. Stage keys stay fixed when a stage is renamed, so existing clients, auto-reply rules and workflows keep working. A stage that still has clients in it cannot be removed.
 
 ## Security notes
 
@@ -126,6 +144,22 @@ Settings > Templates holds the reply content. Settings > Automatic replies has m
 - WhatsApp webhooks are verified with the `X-Hub-Signature-256` HMAC; Gmail push and cron endpoints require their shared secrets.
 - Email HTML is sanitised before storage; attachments and WhatsApp media are proxied through authenticated endpoints and never stored in the database.
 - The app sets `X-Frame-Options`, `X-Content-Type-Options` and a referrer policy on every response.
+
+## Demo mode
+
+The repository ships with a self-contained demo: a Cape Town agency with clients at every pipeline stage, properties in every status, email and WhatsApp conversations, activities, templates, auto-reply rules and notifications. It runs against its own database and its own login so it never touches real data.
+
+```bash
+# once: create the demo database (adjust if your Postgres user differs)
+sudo -u postgres psql -c "CREATE DATABASE foyer_demo OWNER foyer;"
+
+npm run demo:seed   # migrate + wipe + seed the demo database (safe to re-run)
+npm run demo        # start the demo on http://localhost:3001
+```
+
+Log in with **demo@foyer.demo** / **FoyerDemo1**. Settings live in `.env.demo`, which is committed because everything in it is fake. The seed dates are relative to today, so the dashboard always shows something due, something overdue and someone who has gone quiet. Re-run `npm run demo:seed` at any time to reset the demo. The seed refuses to run against a database whose name does not contain "demo" unless you pass `--force`.
+
+The demo can run next to `npm run dev`: it uses port 3001 and builds into `.next-demo`. Gmail and WhatsApp are not connected in the demo; instead `FOYER_DEMO=true` shows the reply composers and records sent messages without calling Google or Meta, and `AI_DRAFT_DEMO=true` makes the **Draft with AI** button return pre-written drafts for the seeded clients (see `src/lib/ai/demo-drafts.ts`). A presenter script lives in `docs/demo-script.md`.
 
 ## Project layout
 

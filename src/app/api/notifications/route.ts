@@ -4,6 +4,7 @@ import { getGmailAccount } from "@/lib/gmail/account";
 import { gmailSyncIsStale, syncGmail } from "@/lib/gmail/sync";
 import { countUnreadInbound } from "@/lib/queries/messages";
 import { countUnreadNotifications, listUnreadNotifications } from "@/lib/queries/notifications";
+import { runScheduledWorkflows } from "@/lib/workflows/scheduled";
 
 export const maxDuration = 30;
 
@@ -18,6 +19,7 @@ export async function GET(request: NextRequest) {
   let sync: Awaited<ReturnType<typeof syncGmail>> | null = null;
   if (wantsSync && (await gmailSyncIsStale())) {
     sync = await syncGmail({ reason: "poll", budgetMs: 12_000 });
+    await runScheduledWorkflows().catch((error) => console.error("[workflows] scheduled check failed:", error));
   }
 
   const [unreadNotifications, unreadMessages, latest, account] = await Promise.all([

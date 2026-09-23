@@ -2,8 +2,7 @@ import Link from "next/link";
 import { isPast } from "date-fns";
 import { Plus, Search } from "lucide-react";
 import { listClients } from "@/lib/queries/clients";
-import { getSettings } from "@/lib/queries/settings";
-import { STAGES } from "@/lib/pipeline";
+import { getSettings, stagesFrom } from "@/lib/queries/settings";
 import { formatCurrency, formatSmartDate, fullName, formatDate } from "@/lib/format";
 import { formatPhone } from "@/lib/phone";
 import { LinkRow } from "@/components/ui/link-row";
@@ -16,6 +15,7 @@ type Search = { q?: string; stage?: string; attention?: string; followups?: stri
 export default async function ClientsPage({ searchParams }: { searchParams: Promise<Search> }) {
   const params = await searchParams;
   const settings = await getSettings();
+  const stages = stagesFrom(settings);
   const sort = (["recent", "name", "stage", "created"].includes(params.sort ?? "") ? params.sort : "recent") as "recent" | "name" | "stage" | "created";
   const clients = await listClients({
     search: params.q,
@@ -46,7 +46,7 @@ export default async function ClientsPage({ searchParams }: { searchParams: Prom
           </div>
           <select name="stage" defaultValue={params.stage ?? ""} className="select w-44">
             <option value="">All stages</option>
-            {STAGES.map((stage) => (
+            {stages.map((stage) => (
               <option key={stage.key} value={stage.key}>
                 {stage.label}
               </option>

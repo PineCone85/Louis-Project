@@ -10,6 +10,8 @@ const ITEMS = [
   { href: "/settings/whatsapp", label: "WhatsApp" },
   { href: "/settings/templates", label: "Templates" },
   { href: "/settings/auto-replies", label: "Automatic replies" },
+  { href: "/settings/workflows", label: "Workflows" },
+  { href: "/settings/pipeline", label: "Pipeline" },
 ];
 
 export function SettingsNav() {

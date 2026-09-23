@@ -1,6 +1,8 @@
+import { randomUUID } from "node:crypto";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { clients, messages, type Message } from "@/lib/db/schema";
+import { env } from "@/lib/env";
 import { truncate } from "@/lib/format";
 import { logActivity } from "@/lib/messaging/activity";
 import { phoneToWaId } from "@/lib/phone";
@@ -56,10 +58,11 @@ async function storeOutbound(input: StoreInput): Promise<Message> {
     .returning();
 
   if (input.clientId) {
-    await db
+    const [client] = await db
       .update(clients)
       .set({ lastContactAt: sql`greatest(coalesce(${clients.lastContactAt}, ${now}), ${now})` })
-      .where(eq(clients.id, input.clientId));
+      .where(eq(clients.id, input.clientId))
+      .returning();
     if (!input.isAutoReply) {
       await logActivity({
         clientId: input.clientId,
@@ -68,6 +71,8 @@ async function storeOutbound(input: StoreInput): Promise<Message> {
         body: truncate(input.text, 160),
         metadata: { messageId: stored.id },
       });
+      const { dispatchWorkflowEvent } = await import("@/lib/workflows/engine");
+      await dispatchWorkflowEvent({ trigger: "message.sent", client: client ?? null, message: stored, contact: { name: input.contactName, address: input.phone } });
     }
   }
   return stored;
@@ -83,7 +88,8 @@ export async function sendWhatsAppText(input: {
 }): Promise<Message> {
   const text = input.text.trim();
   if (!text) throw new Error("Message text is required.");
-  const { messageId } = await sendTextMessage(phoneToWaId(input.toPhone), text);
+  // In demo mode the message is recorded as sent without calling Meta.
+  const { messageId } = env.demo ? { messageId: `demo-${randomUUID()}` } : await sendTextMessage(phoneToWaId(input.toPhone), text);
   return storeOutbound({
     phone: input.toPhone,
     externalId: messageId,
@@ -113,11 +119,9 @@ export async function sendWhatsAppTemplate(input: {
   if (input.bodyParams.length > 0) {
     components.push({ type: "body", parameters: input.bodyParams.map((text) => ({ type: "text", text })) });
   }
-  const { messageId } = await sendTemplateMessage(phoneToWaId(input.toPhone), {
-    name: input.templateName,
-    language: input.language,
-    components,
-  });
+  const { messageId } = env.demo
+    ? { messageId: `demo-${randomUUID()}` }
+    : await sendTemplateMessage(phoneToWaId(input.toPhone), { name: input.templateName, language: input.language, components });
   return storeOutbound({
     phone: input.toPhone,
     externalId: messageId,

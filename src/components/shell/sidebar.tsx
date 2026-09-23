@@ -2,14 +2,15 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Building2, Inbox, KanbanSquare, LayoutDashboard, Settings, Users } from "lucide-react";
+import { Building2, Inbox, KanbanSquare, LayoutDashboard, Settings, Sparkles, Users } from "lucide-react";
 import { APP_NAME } from "@/lib/constants";
 import { cx } from "@/components/ui/primitives";
 import { useNotifications } from "./notifications-provider";
 
-const NAV = [
+const NAV: Array<{ href: string; label: string; icon: typeof Inbox; exact?: boolean; badge?: boolean; drafts?: boolean }> = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard, exact: true },
   { href: "/inbox", label: "Inbox", icon: Inbox, badge: true },
+  { href: "/drafts", label: "Drafts", icon: Sparkles, drafts: true },
   { href: "/clients", label: "Clients", icon: Users },
   { href: "/pipeline", label: "Pipeline", icon: KanbanSquare },
   { href: "/properties", label: "Properties", icon: Building2 },
@@ -21,6 +22,8 @@ type Props = {
   agencyName: string;
   gmail: { connected: boolean; email: string | null; error: string | null };
   whatsapp: { configured: boolean };
+  /** Messages drafted by workflows that are waiting for review. */
+  pendingDrafts: number;
   signOut: () => Promise<void>;
 };
 
@@ -28,7 +31,7 @@ function StatusDot({ ok, warn }: { ok: boolean; warn?: boolean }) {
   return <span className={cx("inline-block h-1.5 w-1.5 rounded-full", ok ? (warn ? "bg-danger" : "bg-sage-500") : "bg-line-strong")} />;
 }
 
-export function Sidebar({ agentName, agencyName, gmail, whatsapp, signOut }: Props) {
+export function Sidebar({ agentName, agencyName, gmail, whatsapp, pendingDrafts, signOut }: Props) {
   const pathname = usePathname();
   const { counts, gmailError } = useNotifications();
   const unread = counts.unreadMessages.total;
@@ -42,6 +45,7 @@ export function Sidebar({ agentName, agencyName, gmail, whatsapp, signOut }: Pro
         <Icon size={16} strokeWidth={1.75} className="shrink-0" />
         <span className="flex-1">{item.label}</span>
         {item.badge && unread > 0 ? <span className="badge-count">{unread > 99 ? "99+" : unread}</span> : null}
+        {item.drafts && pendingDrafts > 0 ? <span className="badge-count">{pendingDrafts > 99 ? "99+" : pendingDrafts}</span> : null}
       </Link>
     );
   });
@@ -89,7 +93,7 @@ export function Sidebar({ agentName, agencyName, gmail, whatsapp, signOut }: Pro
             return (
               <Link key={item.href} href={item.href} aria-label={item.label} className={cx("relative rounded-sm p-2 text-ink-muted", active && "bg-sage-100 text-sage-900")}>
                 <Icon size={18} strokeWidth={1.75} />
-                {item.badge && unread > 0 ? <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-sage-700" /> : null}
+                {(item.badge && unread > 0) || (item.drafts && pendingDrafts > 0) ? <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-sage-700" /> : null}
               </Link>
             );
           })}

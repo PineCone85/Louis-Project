@@ -16,9 +16,13 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "node scripts/migrate.mjs",
     "db:studio": "drizzle-kit studio",
-    "auth:hash": "node scripts/hash-password.mjs"
+    "auth:hash": "node scripts/hash-password.mjs",
+    "auth:user": "node scripts/add-user.mjs",
+    "demo": "node scripts/with-env.mjs .env.demo next dev -p 3001",
+    "demo:seed": "node scripts/with-env.mjs .env.demo node scripts/seed-demo.mjs"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.125.0",
     "date-fns": "^4.4.0",
     "dotenv": "^17.4.2",
     "drizzle-orm": "^0.45.2",

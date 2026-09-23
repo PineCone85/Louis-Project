@@ -3,6 +3,7 @@ import { eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { clients, messages, type Message } from "@/lib/db/schema";
 import type { ParsedAddress } from "@/lib/email-address";
+import { env } from "@/lib/env";
 import { truncate } from "@/lib/format";
 import { logActivity } from "@/lib/messaging/activity";
 import { getSettings } from "@/lib/queries/settings";
@@ -24,12 +25,12 @@ export type SendEmailInput = {
 
 /** Sends an email through the connected Gmail account and records it in the CRM. */
 export async function sendEmail(input: SendEmailInput): Promise<Message> {
-  const account = await getGmailAccount();
-  if (!account) throw new Error("Gmail is not connected. Connect it in Settings before sending email.");
+  const connected = await getGmailAccount();
+  if (!connected && !env.demo) throw new Error("Gmail is not connected. Connect it in Settings before sending email.");
   if (input.to.length === 0) throw new Error("A recipient is required.");
 
   const settings = await getSettings();
-  const client = new GmailClient(account);
+  const account = connected ?? { emailAddress: `${settings.agentName.split(" ")[0].toLowerCase() || "agent"}@demo.local` };
   const domain = account.emailAddress.split("@")[1] ?? "mail.gmail.com";
   const messageId = `<${randomUUID()}@${domain}>`;
   const html = textToHtml(input.text);
@@ -46,10 +47,13 @@ export async function sendEmail(input: SendEmailInput): Promise<Message> {
     references: input.replyTo ? buildReferences(input.replyTo.references, input.replyTo.messageIdHeader) : null,
   });
 
-  const response = await client.sendRaw(
-    Buffer.from(raw, "utf8").toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""),
-    input.replyTo?.threadId ?? undefined,
-  );
+  // In demo mode the message is recorded as sent without leaving the CRM.
+  const response = connected
+    ? await new GmailClient(connected).sendRaw(
+        Buffer.from(raw, "utf8").toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""),
+        input.replyTo?.threadId ?? undefined,
+      )
+    : { id: `demo-${randomUUID()}`, threadId: input.replyTo?.threadId ?? `demo-thread-${randomUUID()}` };
 
   const now = new Date();
   const counterpart = input.to[0];
@@ -87,10 +91,11 @@ export async function sendEmail(input: SendEmailInput): Promise<Message> {
     .returning();
 
   if (input.clientId) {
-    await db
+    const [client] = await db
       .update(clients)
       .set({ lastContactAt: sql`greatest(coalesce(${clients.lastContactAt}, ${now}), ${now})` })
-      .where(eq(clients.id, input.clientId));
+      .where(eq(clients.id, input.clientId))
+      .returning();
     if (!input.isAutoReply) {
       await logActivity({
         clientId: input.clientId,
@@ -99,6 +104,8 @@ export async function sendEmail(input: SendEmailInput): Promise<Message> {
         body: input.subject,
         metadata: { messageId: stored.id },
       });
+      const { dispatchWorkflowEvent } = await import("@/lib/workflows/engine");
+      await dispatchWorkflowEvent({ trigger: "message.sent", client: client ?? null, message: stored, contact: { name: counterpart.name, address: counterpart.address } });
     }
   }
 
