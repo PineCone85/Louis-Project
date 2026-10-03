@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { safeEqual } from "@/lib/crypto";
+import { syncEmailAccounts } from "@/lib/email/sync";
 import { env } from "@/lib/env";
-import { syncGmail } from "@/lib/gmail/sync";
 import { runScheduledWorkflows } from "@/lib/workflows/scheduled";
 
 export const maxDuration = 60;
@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
   if (!secret || !safeEqual(secret, provided)) {
     return NextResponse.json({ error: "Unauthorised" }, { status: 401 });
   }
-  const result = await syncGmail({ reason: "cron", budgetMs: 50_000 });
+  const result = await syncEmailAccounts({ reason: "cron", budgetMs: 50_000 });
   const workflows = await runScheduledWorkflows().catch((error) => {
     console.error("[workflows] scheduled check failed:", error);
     return null;

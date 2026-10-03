@@ -131,6 +131,8 @@ export const messages = pgTable(
     channel: text("channel").notNull(),
     direction: text("direction").notNull(),
     clientId: uuid("client_id").references(() => clients.id, { onDelete: "set null" }),
+    /** The connected mailbox an email belongs to. Null for WhatsApp and for legacy rows. */
+    accountId: uuid("account_id").references(() => emailAccounts.id, { onDelete: "set null" }),
     contactName: text("contact_name"),
     contactAddress: text("contact_address").notNull(),
     externalId: text("external_id"),
@@ -162,6 +164,7 @@ export const messages = pgTable(
     index("messages_contact_idx").on(t.channel, t.contactAddress),
     index("messages_thread_idx").on(t.threadId),
     index("messages_sent_at_idx").on(t.sentAt),
+    index("messages_message_id_header_idx").on(t.channel, t.messageIdHeader),
   ],
 );
 
@@ -345,25 +348,50 @@ export const messageDrafts = pgTable(
   (t) => [index("message_drafts_status_idx").on(t.status, t.createdAt), index("message_drafts_client_idx").on(t.clientId)],
 );
 
-export const gmailAccounts = pgTable("gmail_accounts", {
-  id: integer("id").primaryKey().default(1),
-  emailAddress: text("email_address").notNull(),
-  refreshTokenEnc: text("refresh_token_enc").notNull(),
-  accessTokenEnc: text("access_token_enc"),
-  accessTokenExpiresAt: timestamp("access_token_expires_at", { withTimezone: true }),
-  scopes: text("scopes").notNull().default(""),
-  historyId: text("history_id"),
-  watchTopic: text("watch_topic"),
-  watchExpiresAt: timestamp("watch_expires_at", { withTimezone: true }),
-  backfillPageToken: text("backfill_page_token"),
-  backfillCompletedAt: timestamp("backfill_completed_at", { withTimezone: true }),
-  syncLockedAt: timestamp("sync_locked_at", { withTimezone: true }),
-  lastSyncAt: timestamp("last_sync_at", { withTimezone: true }),
-  lastSyncError: text("last_sync_error"),
-  lastSyncErrorAt: timestamp("last_sync_error_at", { withTimezone: true }),
-  connectedAt: timestamp("connected_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
+export type EmailProvider = "gmail" | "outlook";
+
+/** Provider-specific synchronisation cursors. */
+export type EmailSyncState = {
+  gmail?: { historyId?: string | null; backfillPageToken?: string | null };
+  outlook?: {
+    /** Next delta or page URL to call for the inbox; null starts a fresh enumeration. */
+    inboxLink?: string | null;
+    sentLink?: string | null;
+    /** True once a deltaLink has been obtained, meaning the initial enumeration is complete. */
+    inboxReady?: boolean;
+    sentReady?: boolean;
+    /** Set when the initial date filter is rejected; enumeration then relies on client-side date checks. */
+    filterUnsupported?: boolean;
+    subscriptionError?: string | null;
+  };
+};
+
+/** Connected mailboxes. Gmail and Outlook accounts share one table and sync pipeline. */
+export const emailAccounts = pgTable(
+  "email_accounts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    provider: text("provider").$type<EmailProvider>().notNull(),
+    emailAddress: text("email_address").notNull(),
+    displayName: text("display_name"),
+    refreshTokenEnc: text("refresh_token_enc").notNull(),
+    accessTokenEnc: text("access_token_enc"),
+    accessTokenExpiresAt: timestamp("access_token_expires_at", { withTimezone: true }),
+    scopes: text("scopes").notNull().default(""),
+    syncState: jsonb("sync_state").$type<EmailSyncState>().notNull().default(sql`'{}'::jsonb`),
+    /** Gmail: the Pub/Sub topic being watched. Outlook: the change-notification subscription id. */
+    watchId: text("watch_id"),
+    watchExpiresAt: timestamp("watch_expires_at", { withTimezone: true }),
+    backfillCompletedAt: timestamp("backfill_completed_at", { withTimezone: true }),
+    syncLockedAt: timestamp("sync_locked_at", { withTimezone: true }),
+    lastSyncAt: timestamp("last_sync_at", { withTimezone: true }),
+    lastSyncError: text("last_sync_error"),
+    lastSyncErrorAt: timestamp("last_sync_error_at", { withTimezone: true }),
+    connectedAt: timestamp("connected_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("email_accounts_provider_address_idx").on(t.provider, t.emailAddress)],
+);
 
 export const loginAttempts = pgTable("login_attempts", {
   key: text("key").primaryKey(),
@@ -384,7 +412,7 @@ export type Notification = typeof notifications.$inferSelect;
 export type Template = typeof templates.$inferSelect;
 export type AutoReplyRule = typeof autoReplyRules.$inferSelect;
 export type Settings = typeof settings.$inferSelect;
-export type GmailAccount = typeof gmailAccounts.$inferSelect;
+export type EmailAccount = typeof emailAccounts.$inferSelect;
 export type Workflow = typeof workflows.$inferSelect;
 export type NewWorkflow = typeof workflows.$inferInsert;
 export type WorkflowRun = typeof workflowRuns.$inferSelect;

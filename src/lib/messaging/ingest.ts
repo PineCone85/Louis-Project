@@ -1,7 +1,8 @@
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { clients, messages, type Client, type Message, type Settings, type WhatsAppMedia } from "@/lib/db/schema";
-import { isAutomatedEmail, type ParsedGmailMessage } from "@/lib/gmail/mime";
+import { isAutomatedEmail } from "@/lib/gmail/mime";
+import type { ParsedEmail } from "@/lib/email/types";
 import { sanitizeEmailHtml } from "@/lib/sanitize";
 import { truncate } from "@/lib/format";
 import { waIdToPhone } from "@/lib/phone";
@@ -38,8 +39,10 @@ async function touchClient(client: Client, direction: "inbound" | "outbound", at
 // ---------------------------------------------------------------------------
 
 export type IngestEmailInput = {
-  parsed: ParsedGmailMessage;
+  parsed: ParsedEmail;
   accountEmail: string;
+  /** The connected mailbox the message came from. */
+  accountId: string | null;
   /** Messages that pre-date the connection are stored silently: no notification, no automatic reply. */
   historical: boolean;
   settings: Settings;
@@ -63,6 +66,24 @@ export async function ingestEmail(input: IngestEmailInput): Promise<IngestResult
     if (!settings.trackUnknownSenders) return { message: null, created: false, client: null };
   }
 
+  // Mail sent from the CRM is stored before the provider's sent copy is synchronised.
+  // Outlook assigns a new id when a draft moves to Sent Items, so match on the Message-ID header too.
+  if (direction === "outbound" && parsed.messageIdHeader) {
+    const existing = await db.query.messages.findFirst({
+      where: and(eq(messages.channel, "email"), eq(messages.messageIdHeader, parsed.messageIdHeader)),
+      columns: { id: true, externalId: true, accountId: true, threadId: true },
+    });
+    if (existing) {
+      if (existing.externalId !== parsed.id || !existing.accountId) {
+        await db
+          .update(messages)
+          .set({ externalId: parsed.id, accountId: existing.accountId ?? input.accountId, threadId: existing.threadId ?? parsed.threadId })
+          .where(eq(messages.id, existing.id));
+      }
+      return { message: null, created: false, client };
+    }
+  }
+
   const isNewContact = !(await hasPriorMessages("email", counterpart.address));
   const bodyHtml = parsed.html ? sanitizeEmailHtml(parsed.html).slice(0, MAX_HTML) : null;
 
@@ -72,6 +93,7 @@ export async function ingestEmail(input: IngestEmailInput): Promise<IngestResult
       channel: "email",
       direction,
       clientId: client?.id ?? null,
+      accountId: input.accountId,
       contactName: counterpart.name,
       contactAddress: counterpart.address,
       externalId: parsed.id,

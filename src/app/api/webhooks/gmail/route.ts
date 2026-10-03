@@ -1,9 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { after } from "next/server";
 import { safeEqual } from "@/lib/crypto";
+import { findEmailAccount, listEmailAccounts } from "@/lib/email/accounts";
+import { syncEmailAccounts } from "@/lib/email/sync";
 import { env } from "@/lib/env";
-import { getGmailAccount } from "@/lib/gmail/account";
-import { syncGmail } from "@/lib/gmail/sync";
 
 export const maxDuration = 60;
 
@@ -31,13 +31,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Bad request" }, { status: 400 });
   }
 
-  const account = await getGmailAccount();
-  if (!account || (emailAddress && emailAddress !== account.emailAddress.toLowerCase())) {
-    return NextResponse.json({ ok: true, ignored: true });
-  }
+  const account = emailAddress
+    ? await findEmailAccount("gmail", emailAddress)
+    : ((await listEmailAccounts()).find((a) => a.provider === "gmail") ?? null);
+  if (!account) return NextResponse.json({ ok: true, ignored: true });
 
   after(async () => {
-    await syncGmail({ reason: "push", budgetMs: 40_000 });
+    await syncEmailAccounts({ reason: "push", budgetMs: 40_000, accountIds: [account.id] });
   });
 
   return NextResponse.json({ ok: true });

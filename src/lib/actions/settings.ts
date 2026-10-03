@@ -6,9 +6,12 @@ import { z } from "zod";
 import { requireSession } from "@/lib/auth/session";
 import { db } from "@/lib/db";
 import { settings, type BusinessHours } from "@/lib/db/schema";
-import { disconnectGmail, getGmailAccount } from "@/lib/gmail/account";
+import { disconnectEmailAccount, getEmailAccount } from "@/lib/email/accounts";
+import { syncEmailAccounts } from "@/lib/email/sync";
 import { GmailClient } from "@/lib/gmail/client";
-import { ensureGmailWatch, syncGmail } from "@/lib/gmail/sync";
+import { ensureGmailWatch } from "@/lib/gmail/sync";
+import { GraphClient } from "@/lib/outlook/client";
+import { ensureOutlookSubscription } from "@/lib/outlook/sync";
 import { normalizePhone } from "@/lib/phone";
 import { fieldErrorsFrom, formBoolean, formString, type ActionResult } from "@/lib/validation";
 
@@ -114,33 +117,44 @@ export async function saveAutomationAction(_prev: ActionResult<{ saved: boolean 
   return { ok: true, data: { saved: true } };
 }
 
-export async function disconnectGmailAction(): Promise<void> {
+export async function disconnectEmailAccountAction(accountId: string): Promise<void> {
   await requireSession();
-  await disconnectGmail();
-  revalidatePath("/settings/gmail");
+  await disconnectEmailAccount(accountId);
+  revalidatePath("/settings/email");
   revalidatePath("/", "layout");
 }
 
 export async function syncNowAction(): Promise<ActionResult<{ processed: number; created: number }>> {
   await requireSession();
-  const result = await syncGmail({ reason: "manual", budgetMs: 45_000 });
-  revalidatePath("/settings/gmail");
+  const result = await syncEmailAccounts({ reason: "manual", budgetMs: 45_000 });
+  revalidatePath("/settings/email");
   revalidatePath("/inbox");
   revalidatePath("/");
-  if (!result.ran) return { ok: false, error: result.reason === "locked" ? "A sync is already running." : "Gmail is not connected." };
+  if (!result.ran) {
+    return { ok: false, error: result.reason === "locked" ? "A sync is already running." : "No email account is connected." };
+  }
   if (result.error) return { ok: false, error: result.error };
   return { ok: true, data: { processed: result.processed, created: result.created } };
 }
 
-export async function enableGmailWatchAction(): Promise<ActionResult> {
+/** Registers push notifications for one mailbox (Gmail Pub/Sub watch or Graph subscription). */
+export async function enablePushAction(accountId: string): Promise<ActionResult> {
   await requireSession();
-  const account = await getGmailAccount();
-  if (!account) return { ok: false, error: "Gmail is not connected." };
+  const account = await getEmailAccount(accountId);
+  if (!account) return { ok: false, error: "This mailbox is no longer connected." };
+  const fresh = { ...account, watchExpiresAt: null, watchId: null };
   try {
-    await ensureGmailWatch(new GmailClient(account), { ...account, watchExpiresAt: null, watchTopic: null });
+    if (account.provider === "gmail") {
+      await ensureGmailWatch(new GmailClient(account), fresh);
+    } else {
+      await ensureOutlookSubscription(new GraphClient(account), fresh);
+      const after = await getEmailAccount(accountId);
+      const problem = after?.syncState.outlook?.subscriptionError;
+      if (problem) return { ok: false, error: problem };
+    }
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "Unable to register push notifications" };
   }
-  revalidatePath("/settings/gmail");
+  revalidatePath("/settings/email");
   return { ok: true };
 }

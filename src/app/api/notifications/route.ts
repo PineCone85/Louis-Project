@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getSession } from "@/lib/auth/session";
-import { getGmailAccount } from "@/lib/gmail/account";
-import { gmailSyncIsStale, syncGmail } from "@/lib/gmail/sync";
+import { listEmailAccounts } from "@/lib/email/accounts";
+import { emailSyncIsStale, syncEmailAccounts } from "@/lib/email/sync";
 import { countUnreadInbound } from "@/lib/queries/messages";
 import { countUnreadNotifications, listUnreadNotifications } from "@/lib/queries/notifications";
 import { runScheduledWorkflows } from "@/lib/workflows/scheduled";
@@ -9,33 +9,36 @@ import { runScheduledWorkflows } from "@/lib/workflows/scheduled";
 export const maxDuration = 30;
 
 /**
- * Polled by the application shell. Optionally runs a short incremental Gmail
- * sync first so that new mail appears while the agent is working.
+ * Polled by the application shell. Optionally runs a short incremental mail
+ * sync first so that new messages appear while the agent is working.
  */
 export async function GET(request: NextRequest) {
   if (!(await getSession())) return NextResponse.json({ error: "Unauthorised" }, { status: 401 });
 
   const wantsSync = request.nextUrl.searchParams.get("sync") === "1";
-  let sync: Awaited<ReturnType<typeof syncGmail>> | null = null;
-  if (wantsSync && (await gmailSyncIsStale())) {
-    sync = await syncGmail({ reason: "poll", budgetMs: 12_000 });
+  let sync: Awaited<ReturnType<typeof syncEmailAccounts>> | null = null;
+  if (wantsSync && (await emailSyncIsStale())) {
+    sync = await syncEmailAccounts({ reason: "poll", budgetMs: 12_000 });
     await runScheduledWorkflows().catch((error) => console.error("[workflows] scheduled check failed:", error));
   }
 
-  const [unreadNotifications, unreadMessages, latest, account] = await Promise.all([
+  const [unreadNotifications, unreadMessages, latest, accounts] = await Promise.all([
     countUnreadNotifications(),
     countUnreadInbound(),
     listUnreadNotifications(5),
-    getGmailAccount(),
+    listEmailAccounts(),
   ]);
 
+  const failing = accounts.filter((a) => a.lastSyncError);
   return NextResponse.json({
     unreadNotifications,
     unreadMessages,
     latest: latest.map((n) => ({ id: n.id, title: n.title, body: n.body, clientId: n.clientId, createdAt: n.createdAt })),
-    gmail: account
-      ? { connected: true, lastSyncAt: account.lastSyncAt, error: account.lastSyncError }
-      : { connected: false, lastSyncAt: null, error: null },
+    email: {
+      connected: accounts.length > 0,
+      accounts: accounts.map((a) => ({ id: a.id, provider: a.provider, emailAddress: a.emailAddress, lastSyncAt: a.lastSyncAt, error: a.lastSyncError })),
+      error: failing.length > 0 ? `${failing[0].emailAddress}: ${failing[0].lastSyncError}` : null,
+    },
     sync,
   });
 }

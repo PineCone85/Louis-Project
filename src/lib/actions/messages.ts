@@ -6,8 +6,8 @@ import { requireSession } from "@/lib/auth/session";
 import { db } from "@/lib/db";
 import { clients } from "@/lib/db/schema";
 import { normalizeEmail } from "@/lib/email-address";
-import { sendEmail } from "@/lib/gmail/send";
-import { replySubject } from "@/lib/gmail/mime";
+import { sendEmail } from "@/lib/email/send";
+import { replySubject } from "@/lib/email/html";
 import { logActivity } from "@/lib/messaging/activity";
 import { relinkMessagesForClient } from "@/lib/messaging/ingest";
 import { normalizePhone } from "@/lib/phone";
@@ -32,6 +32,7 @@ export async function sendEmailAction(_prev: ActionResult, formData: FormData): 
   const subject = formString(formData, "subject");
   const body = formString(formData, "body");
   const threadId = formOptional(formData, "threadId");
+  let accountId = formOptional(formData, "accountId");
 
   const fieldErrors: Record<string, string> = {};
   if (!to) fieldErrors.to = "A valid recipient email address is required";
@@ -39,13 +40,15 @@ export async function sendEmailAction(_prev: ActionResult, formData: FormData): 
   if (!body) fieldErrors.body = "Write a message first";
   if (Object.keys(fieldErrors).length > 0) return { ok: false, fieldErrors };
 
-  let replyTo: { threadId: string | null; messageIdHeader: string | null; references: string | null } | null = null;
+  let replyTo: { threadId: string | null; messageIdHeader: string | null; references: string | null; externalId: string | null } | null = null;
   let finalSubject = subject;
   if (threadId) {
     const last = await latestEmailInThread(threadId);
     if (last) {
-      replyTo = { threadId, messageIdHeader: last.messageIdHeader, references: last.referencesHeader };
+      replyTo = { threadId, messageIdHeader: last.messageIdHeader, references: last.referencesHeader, externalId: last.externalId };
       finalSubject = replySubject(subject);
+      // Replies go out from the mailbox the conversation belongs to.
+      accountId = last.accountId ?? accountId;
     }
   }
 
@@ -56,6 +59,7 @@ export async function sendEmailAction(_prev: ActionResult, formData: FormData): 
       text: body,
       clientId,
       contactName: toName,
+      accountId,
       replyTo,
     });
   } catch (error) {

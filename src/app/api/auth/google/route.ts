@@ -9,7 +9,7 @@ export const OAUTH_COOKIE = "foyer_oauth";
 export async function GET(request: NextRequest) {
   if (!(await getSession())) return NextResponse.redirect(new URL("/login", env.appUrl));
   if (!env.google.configured) {
-    return NextResponse.redirect(new URL("/settings/gmail?error=not_configured", env.appUrl));
+    return NextResponse.redirect(new URL("/settings/email?error=not_configured&provider=gmail", env.appUrl));
   }
   const state = randomBytes(24).toString("base64url");
   const { verifier, challenge } = createPkcePair();

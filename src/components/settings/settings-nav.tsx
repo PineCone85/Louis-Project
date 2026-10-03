@@ -6,7 +6,7 @@ import { cx } from "@/components/ui/primitives";
 
 const ITEMS = [
   { href: "/settings", label: "Profile" },
-  { href: "/settings/gmail", label: "Gmail" },
+  { href: "/settings/email", label: "Email accounts" },
   { href: "/settings/whatsapp", label: "WhatsApp" },
   { href: "/settings/templates", label: "Templates" },
   { href: "/settings/auto-replies", label: "Automatic replies" },

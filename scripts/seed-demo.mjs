@@ -1464,7 +1464,7 @@ try {
   await client.query("begin");
   console.log("[seed] Clearing existing data…");
   await client.query(
-    "truncate message_drafts, workflow_runs, workflows, auto_reply_log, auto_reply_rules, message_templates, notifications, activities, client_properties, messages, properties, clients, settings, login_attempts, gmail_accounts restart identity cascade",
+    "truncate message_drafts, workflow_runs, workflows, auto_reply_log, auto_reply_rules, message_templates, notifications, activities, client_properties, messages, properties, clients, settings, login_attempts, email_accounts restart identity cascade",
   );
 
   console.log("[seed] Settings…");

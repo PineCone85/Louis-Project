@@ -1,29 +1,17 @@
 import type { EmailAttachment } from "@/lib/db/schema";
 import { formatAddress, parseAddressList, type ParsedAddress } from "@/lib/email-address";
+import { decodeEntities, escapeHtml, htmlToText, replySubject, textToHtml } from "@/lib/email/html";
+import type { ParsedEmail } from "@/lib/email/types";
 import type { GmailMessage, GmailPart } from "./client";
+
+export { decodeEntities, escapeHtml, htmlToText, replySubject, textToHtml };
+
+/** Gmail messages are parsed into the shared provider-neutral shape. */
+export type ParsedGmailMessage = ParsedEmail;
 
 // ---------------------------------------------------------------------------
 // Decoding incoming messages
 // ---------------------------------------------------------------------------
-
-export type ParsedGmailMessage = {
-  id: string;
-  threadId: string;
-  labelIds: string[];
-  headers: Record<string, string>;
-  from: ParsedAddress | null;
-  to: ParsedAddress[];
-  cc: ParsedAddress[];
-  subject: string;
-  snippet: string;
-  text: string;
-  html: string | null;
-  attachments: EmailAttachment[];
-  messageIdHeader: string | null;
-  inReplyTo: string | null;
-  references: string | null;
-  sentAt: Date;
-};
 
 export function decodeBase64Url(data: string): string {
   return Buffer.from(data.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8");
@@ -130,36 +118,6 @@ export function isAutomatedEmail(parsed: ParsedGmailMessage): boolean {
   return false;
 }
 
-export function decodeEntities(input: string): string {
-  return input
-    .replace(/&nbsp;/g, " ")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;|&apos;/g, "'")
-    .replace(/&#(\d+);/g, (_, code: string) => String.fromCodePoint(Number(code)))
-    .replace(/&#x([0-9a-f]+);/gi, (_, code: string) => String.fromCodePoint(parseInt(code, 16)))
-    .replace(/&amp;/g, "&");
-}
-
-/** Converts HTML to readable plain text for previews and search. */
-export function htmlToText(html: string): string {
-  return decodeEntities(
-    html
-      .replace(/<head[\s\S]*?<\/head>/gi, "")
-      .replace(/<style[\s\S]*?<\/style>/gi, "")
-      .replace(/<script[\s\S]*?<\/script>/gi, "")
-      .replace(/<!--[\s\S]*?-->/g, "")
-      .replace(/<br\s*\/?>/gi, "\n")
-      .replace(/<\/(p|div|tr|li|h[1-6]|blockquote|pre)>/gi, "\n")
-      .replace(/<[^>]+>/g, ""),
-  )
-    .replace(/\r/g, "")
-    .replace(/[ \t]+\n/g, "\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-}
-
 // ---------------------------------------------------------------------------
 // Building outgoing messages
 // ---------------------------------------------------------------------------
@@ -184,18 +142,6 @@ function encodeHeaderValue(value: string): string {
 function wrapBase64(input: string): string {
   const encoded = Buffer.from(input, "utf8").toString("base64");
   return encoded.replace(/(.{76})/g, "$1\r\n");
-}
-
-export function escapeHtml(input: string): string {
-  return input.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-}
-
-export function textToHtml(text: string): string {
-  const paragraphs = text.replace(/\r\n/g, "\n").split(/\n{2,}/);
-  const body = paragraphs
-    .map((paragraph) => `<p style="margin:0 0 1em 0">${escapeHtml(paragraph).replace(/\n/g, "<br>")}</p>`)
-    .join("");
-  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.5;color:#111">${body}</div>`;
 }
 
 export function buildMimeMessage(email: OutgoingEmail): string {
@@ -228,12 +174,6 @@ export function buildMimeMessage(email: OutgoingEmail): string {
     "",
   );
   return lines.join("\r\n");
-}
-
-export function replySubject(subject: string | null | undefined): string {
-  const base = (subject ?? "").trim();
-  if (!base) return "Re: (no subject)";
-  return /^re:/i.test(base) ? base : `Re: ${base}`;
 }
 
 export function buildReferences(existingReferences: string | null | undefined, messageId: string | null | undefined): string | null {
