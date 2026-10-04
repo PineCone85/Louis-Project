@@ -17,7 +17,13 @@ export class Budget {
 }
 
 export type SyncStats = { processed: number; created: number };
-export type ProviderSyncContext = { settings: Settings; budget: Budget; stats: SyncStats };
+export type ProviderSyncContext = {
+  settings: Settings;
+  budget: Budget;
+  stats: SyncStats;
+  /** Addresses of every connected mailbox. */
+  selfAddresses: string[];
+};
 
 export type AccountSyncResult = {
   accountId: string;
@@ -90,6 +96,7 @@ export async function syncEmailAccounts(options: { reason: SyncReason; budgetMs?
 
   const budget = new Budget(options.budgetMs ?? 40_000);
   const settings = await getSettings();
+  const selfAddresses = (await listEmailAccounts()).map((a) => a.emailAddress.toLowerCase());
   const results: AccountSyncResult[] = [];
 
   for (const account of accounts) {
@@ -108,7 +115,7 @@ export async function syncEmailAccounts(options: { reason: SyncReason; budgetMs?
     }
     const stats: SyncStats = { processed: 0, created: 0 };
     try {
-      await syncOne(account, { settings, budget, stats });
+      await syncOne(account, { settings, budget, stats, selfAddresses });
       await updateEmailAccount(account.id, { lastSyncAt: new Date(), lastSyncError: null, lastSyncErrorAt: null });
       results.push({ ...base, ran: true, ...stats });
     } catch (error) {

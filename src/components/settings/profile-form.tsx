@@ -114,8 +114,8 @@ export function ProfileForm({ settings }: { settings: Settings }) {
           <label className="flex cursor-pointer items-start gap-3 text-[13px]">
             <input type="checkbox" name="syncSentMail" defaultChecked={settings.syncSentMail} className="checkbox mt-0.5" />
             <span>
-              <span className="font-medium text-ink">Include emails you send to clients from Gmail directly</span>
-              <span className="block text-ink-muted">Keeps the timeline complete even when you reply from your phone or the Gmail website.</span>
+              <span className="font-medium text-ink">Include emails you send to clients from your mailbox directly</span>
+              <span className="block text-ink-muted">Keeps the timeline complete even when you reply from your phone or from the Gmail or Outlook website.</span>
             </span>
           </label>
         </div>

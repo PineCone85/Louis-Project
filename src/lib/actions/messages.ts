@@ -40,12 +40,12 @@ export async function sendEmailAction(_prev: ActionResult, formData: FormData): 
   if (!body) fieldErrors.body = "Write a message first";
   if (Object.keys(fieldErrors).length > 0) return { ok: false, fieldErrors };
 
-  let replyTo: { threadId: string | null; messageIdHeader: string | null; references: string | null; externalId: string | null } | null = null;
+  let replyTo: { threadId: string | null; messageIdHeader: string | null; references: string | null; externalId: string | null; accountId: string | null } | null = null;
   let finalSubject = subject;
   if (threadId) {
     const last = await latestEmailInThread(threadId);
     if (last) {
-      replyTo = { threadId, messageIdHeader: last.messageIdHeader, references: last.referencesHeader, externalId: last.externalId };
+      replyTo = { threadId, messageIdHeader: last.messageIdHeader, references: last.referencesHeader, externalId: last.externalId, accountId: last.accountId };
       finalSubject = replySubject(subject);
       // Replies go out from the mailbox the conversation belongs to.
       accountId = last.accountId ?? accountId;

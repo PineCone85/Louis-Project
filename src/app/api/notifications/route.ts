@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { after } from "next/server";
 import { getSession } from "@/lib/auth/session";
 import { listEmailAccounts } from "@/lib/email/accounts";
 import { emailSyncIsStale, syncEmailAccounts } from "@/lib/email/sync";
@@ -28,6 +29,13 @@ export async function GET(request: NextRequest) {
     listUnreadNotifications(5),
     listEmailAccounts(),
   ]);
+
+  // While a mailbox is still importing its first 30 days, keep going after the response is sent.
+  if (sync?.ran && accounts.some((a) => !a.backfillCompletedAt && !a.lastSyncError)) {
+    after(async () => {
+      await syncEmailAccounts({ reason: "manual", budgetMs: 15_000 });
+    });
+  }
 
   const failing = accounts.filter((a) => a.lastSyncError);
   return NextResponse.json({

@@ -26,6 +26,8 @@ export type SendEmailInput = {
     references: string | null;
     /** Provider id of the message being replied to. */
     externalId?: string | null;
+    /** Mailbox that holds the message being replied to; null when it was disconnected. */
+    accountId?: string | null;
   } | null;
   isAutoReply?: boolean;
   autoReplyRuleId?: string | null;
@@ -49,6 +51,13 @@ export async function sendEmail(input: SendEmailInput): Promise<Message> {
   const fromAddress = account?.emailAddress ?? `${settings.agentName.split(" ")[0].toLowerCase() || "agent"}@demo.local`;
   const html = textToHtml(input.text);
 
+  // Provider ids (Gmail thread ids, Graph message ids) only mean something inside the mailbox that
+  // issued them. When the conversation's mailbox is gone or differs, send a fresh message that still
+  // carries the standard threading headers where the provider lets us set them.
+  const sameMailbox = Boolean(account && input.replyTo && input.replyTo.accountId === account.id);
+  const providerThreadId = sameMailbox ? (input.replyTo?.threadId ?? null) : null;
+  const providerMessageId = sameMailbox ? (input.replyTo?.externalId ?? null) : null;
+
   let externalId: string;
   let threadId: string | null;
   let messageIdHeader: string | null;
@@ -69,7 +78,7 @@ export async function sendEmail(input: SendEmailInput): Promise<Message> {
       text: input.text,
       html,
       messageId: `<${randomUUID()}@${domain}>`,
-      replyTo: input.replyTo ?? null,
+      replyTo: input.replyTo ? { ...input.replyTo, threadId: providerThreadId } : null,
     });
     externalId = sent.externalId;
     threadId = sent.threadId ?? input.replyTo?.threadId ?? null;
@@ -81,7 +90,7 @@ export async function sendEmail(input: SendEmailInput): Promise<Message> {
       cc: input.cc,
       subject: input.subject,
       html,
-      replyToExternalId: input.replyTo?.externalId ?? null,
+      replyToExternalId: providerMessageId,
     });
     externalId = sent.externalId;
     threadId = sent.threadId ?? input.replyTo?.threadId ?? null;

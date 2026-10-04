@@ -39,8 +39,8 @@ export async function sendViaOutlook(account: EmailAccount, input: OutlookSendIn
       draft.conversationId ??= reply.conversationId;
       draft.internetMessageId ??= reply.internetMessageId;
     } catch (error) {
-      // The original may have been moved or deleted; fall back to a fresh message.
-      if (!(error instanceof GraphApiError && error.status === 404)) throw error;
+      // The original may have been deleted, or the id may belong to another mailbox; fall back to a fresh message.
+      if (!(error instanceof GraphApiError && error.badReference)) throw error;
       draft = null;
     }
   }

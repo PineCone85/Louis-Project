@@ -363,6 +363,8 @@ export type EmailSyncState = {
     /** Set when the initial date filter is rejected; enumeration then relies on client-side date checks. */
     filterUnsupported?: boolean;
     subscriptionError?: string | null;
+    /** Fingerprint of the secret and endpoint the current subscription was registered with. */
+    subscriptionConfig?: string;
   };
 };
 

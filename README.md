@@ -123,7 +123,7 @@ Outlook mailboxes connect through the Microsoft Graph API with an app registrati
 6. Open **API permissions > Add a permission > Microsoft Graph > Delegated permissions** and add `Mail.Read`, `Mail.ReadWrite`, `Mail.Send`, `User.Read` and `offline_access`. None of these require admin consent by default. Personal accounts consent for themselves; in a Microsoft 365 organisation the tenant's user-consent policy decides whether the user can approve the app alone or an administrator must grant consent first (Enterprise applications > Consent and permissions).
 7. Deploy, then in the CRM open **Settings > Email accounts** and click **Connect Outlook**. Sign in with the mailbox you use with clients. The last 30 days of inbox and sent mail are imported in the background.
 
-Replies are created with Outlook's own reply function, so they thread correctly and include the quoted original, exactly as if sent from Outlook.
+Replies are created with Outlook's own reply function, so they thread correctly and include the quoted original, exactly as if sent from Outlook. The first import covers the last 30 days and, as Microsoft caps a filtered import at 5,000 messages per folder, keeps the newest ones in a very busy mailbox; everything that arrives after connecting is tracked incrementally.
 
 Optional instant notifications: set `MICROSOFT_WEBHOOK_SECRET` to a random string of up to 128 characters and redeploy. During the next sync the CRM registers a Microsoft Graph change-notification subscription for the inbox pointing at `{APP_URL}/api/webhooks/outlook`, renews it a day before it expires, and recreates it if Microsoft removes it. This needs the public HTTPS address of the deployment; it is skipped on localhost.
 

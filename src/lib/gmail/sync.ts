@@ -36,6 +36,7 @@ async function processRefs(
             parsed,
             accountEmail: account.emailAddress,
             accountId: account.id,
+            selfAddresses: ctx.selfAddresses,
             historical: historical || olderThanConnection,
             settings: ctx.settings,
           });
@@ -59,35 +60,42 @@ async function runIncremental(gmail: GmailClient, account: EmailAccount, ctx: Pr
     return;
   }
 
+  // History is processed page by page, advancing the stored id after each completed page so
+  // that a run cut short by its time budget still makes progress.
   let pageToken: string | undefined;
-  let latestHistoryId = historyId;
-  const seen = new Map<string, GmailMessageRef>();
-
-  try {
-    do {
-      const page = await gmail.listHistory({ startHistoryId: historyId, pageToken, maxResults: 100 });
-      for (const entry of page.history ?? []) {
-        for (const added of entry.messagesAdded ?? []) {
-          if (isRelevant(added.message)) seen.set(added.message.id, added.message);
+  const seen = new Set<string>();
+  do {
+    let page;
+    try {
+      page = await gmail.listHistory({ startHistoryId: historyId, pageToken, maxResults: 100 });
+    } catch (error) {
+      if (error instanceof GmailApiError && error.status === 404) {
+        // The stored history id is too old. Re-anchor and catch up with a recent search.
+        const profile = await gmail.getProfile();
+        const recent = await gmail.listMessages({ q: "newer_than:2d -in:spam -in:trash", maxResults: 100 });
+        await processRefs(gmail, account, recent.messages ?? [], false, ctx);
+        await updateSyncState(account, { gmail: { historyId: profile.historyId } });
+        return;
+      }
+      throw error;
+    }
+    const refs: GmailMessageRef[] = [];
+    let lastRecordId: string | null = null;
+    for (const entry of page.history ?? []) {
+      lastRecordId = entry.id;
+      for (const added of entry.messagesAdded ?? []) {
+        if (isRelevant(added.message) && !seen.has(added.message.id)) {
+          seen.add(added.message.id);
+          refs.push(added.message);
         }
       }
-      if (page.historyId) latestHistoryId = page.historyId;
-      pageToken = page.nextPageToken;
-    } while (pageToken && !ctx.budget.exhausted);
-  } catch (error) {
-    if (error instanceof GmailApiError && error.status === 404) {
-      // The stored history id is too old. Re-anchor and catch up with a recent search.
-      const profile = await gmail.getProfile();
-      const recent = await gmail.listMessages({ q: "newer_than:2d -in:spam -in:trash", maxResults: 100 });
-      await processRefs(gmail, account, recent.messages ?? [], false, ctx);
-      await updateSyncState(account, { gmail: { historyId: profile.historyId } });
-      return;
     }
-    throw error;
-  }
-
-  const complete = await processRefs(gmail, account, Array.from(seen.values()), false, ctx);
-  if (complete) await updateSyncState(account, { gmail: { historyId: latestHistoryId } });
+    const complete = await processRefs(gmail, account, refs, false, ctx);
+    if (!complete) return;
+    pageToken = page.nextPageToken;
+    const nextHistoryId = pageToken ? lastRecordId : (page.historyId ?? lastRecordId);
+    if (nextHistoryId) await updateSyncState(account, { gmail: { historyId: nextHistoryId } });
+  } while (pageToken && !ctx.budget.exhausted);
 }
 
 async function runBackfill(gmail: GmailClient, account: EmailAccount, ctx: ProviderSyncContext): Promise<void> {

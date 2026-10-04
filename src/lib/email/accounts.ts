@@ -39,32 +39,34 @@ export type SaveEmailAccountInput = {
   syncState: EmailSyncState;
 };
 
-/** Creates the account or replaces the credentials of an existing one for the same mailbox. */
+/**
+ * Creates the account, or refreshes the credentials of an existing one for the same mailbox.
+ * Reconnecting keeps the sync cursors, push registration and connection order, so the mailbox
+ * carries on where it left off instead of importing everything again.
+ */
 export async function saveEmailAccount(input: SaveEmailAccountInput): Promise<EmailAccount> {
   const now = new Date();
-  const values = {
-    provider: input.provider,
-    emailAddress: input.emailAddress.toLowerCase(),
+  const credentials = {
     displayName: input.displayName ?? null,
     refreshTokenEnc: encryptSecret(input.refreshToken),
     accessTokenEnc: encryptSecret(input.accessToken),
     accessTokenExpiresAt: new Date(now.getTime() + Math.max(60, input.expiresIn - 60) * 1000),
     scopes: input.scopes,
-    syncState: input.syncState,
-    watchId: null,
-    watchExpiresAt: null,
-    backfillCompletedAt: null,
     syncLockedAt: null,
-    lastSyncAt: null,
     lastSyncError: null,
     lastSyncErrorAt: null,
-    connectedAt: now,
     updatedAt: now,
   };
   const [row] = await db
     .insert(emailAccounts)
-    .values(values)
-    .onConflictDoUpdate({ target: [emailAccounts.provider, emailAccounts.emailAddress], set: values })
+    .values({
+      ...credentials,
+      provider: input.provider,
+      emailAddress: input.emailAddress.toLowerCase(),
+      syncState: input.syncState,
+      connectedAt: now,
+    })
+    .onConflictDoUpdate({ target: [emailAccounts.provider, emailAccounts.emailAddress], set: credentials })
     .returning();
   return row;
 }

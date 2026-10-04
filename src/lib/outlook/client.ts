@@ -25,9 +25,16 @@ export class GraphApiError extends Error {
     this.code = code;
     this.retryAfterSeconds = retryAfterSeconds;
   }
-  /** 410 Gone: the delta token is no longer valid and a full re-enumeration is required. */
+  /**
+   * The delta token is no longer valid and a full re-enumeration is required.
+   * Graph answers 410 Gone or, for Outlook folders, 400 with a sync-state error code.
+   */
   get resyncRequired(): boolean {
-    return this.status === 410;
+    return this.status === 410 || /syncstate|resync/i.test(this.code ?? "");
+  }
+  /** Client errors that mean a referenced message id cannot be used (missing, malformed or foreign). */
+  get badReference(): boolean {
+    return this.status === 404 || (this.status === 400 && /malformed|invalidid|itemnotfound/i.test(this.code ?? ""));
   }
 }
 
@@ -124,16 +131,22 @@ export class GraphClient {
     return { emailAddress: (json.mail ?? json.userPrincipalName ?? "").toLowerCase(), displayName: json.displayName ?? null };
   }
 
-  /** Builds the URL that starts a fresh delta enumeration of a folder, optionally limited to recent mail. */
+  /**
+   * Builds the URL that starts a fresh delta enumeration of a folder, optionally limited to recent
+   * mail. A filtered delta returns at most 5,000 messages, so the newest come first.
+   */
   initialDeltaUrl(folder: MailFolder, since?: Date): string {
     const base = `${GRAPH_BASE}/me/mailFolders/${folder}/messages/delta?$select=id,receivedDateTime`;
     if (!since) return base;
     const stamp = since.toISOString().replace(/\.\d{3}Z$/, "Z");
-    return `${base}&$filter=${encodeURIComponent(`receivedDateTime ge ${stamp}`)}`;
+    return `${base}&$filter=${encodeURIComponent(`receivedDateTime ge ${stamp}`)}&$orderby=${encodeURIComponent("receivedDateTime desc")}`;
   }
 
+  /** Small pages so that a page always fits the shortest sync budget and progress is persisted often. */
+  static readonly DELTA_PAGE_SIZE = 15;
+
   async delta(url: string): Promise<DeltaPage> {
-    const json = await this.request<RawPage<DeltaStub>>(url, { prefer: "odata.maxpagesize=50" });
+    const json = await this.request<RawPage<DeltaStub>>(url, { prefer: `odata.maxpagesize=${GraphClient.DELTA_PAGE_SIZE}` });
     return { value: json.value ?? [], nextLink: json["@odata.nextLink"], deltaLink: json["@odata.deltaLink"] };
   }
 

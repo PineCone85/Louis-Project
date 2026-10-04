@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { EmailAccount, EmailSyncState } from "@/lib/db/schema";
 import { updateEmailAccount, updateSyncState } from "@/lib/email/accounts";
 import type { ProviderSyncContext } from "@/lib/email/sync";
@@ -43,6 +44,7 @@ async function processStubs(client: GraphClient, account: EmailAccount, spec: Fo
           parsed,
           accountEmail: account.emailAddress,
           accountId: account.id,
+          selfAddresses: ctx.selfAddresses,
           historical: parsed.sentAt.getTime() < connectedAt - 60_000,
           settings: ctx.settings,
         });
@@ -66,15 +68,17 @@ async function syncFolder(client: GraphClient, account: EmailAccount, spec: Fold
     try {
       page = await client.delta(link);
     } catch (error) {
-      if (error instanceof GraphApiError && error.status === 400 && !state.filterUnsupported && link.includes("$filter=")) {
-        // The date filter is not accepted by this mailbox; enumerate without it and filter client-side.
-        state = await updateSyncState(account, { outlook: { filterUnsupported: true, [spec.linkKey]: null } }).then((s) => s.outlook ?? {});
+      const isInitialUrl = !/\$(skiptoken|deltatoken)=/i.test(link);
+      if (error instanceof GraphApiError && error.resyncRequired && resets < 1) {
+        // The stored delta token expired (410, or 400 syncStateNotFound): enumerate the folder again.
+        resets += 1;
+        state = await updateSyncState(account, { outlook: { [spec.linkKey]: null, [spec.readyKey]: false } }).then((s) => s.outlook ?? {});
         link = null;
         continue;
       }
-      if (error instanceof GraphApiError && error.resyncRequired && resets < 1) {
-        resets += 1;
-        state = await updateSyncState(account, { outlook: { [spec.linkKey]: null, [spec.readyKey]: false } }).then((s) => s.outlook ?? {});
+      if (error instanceof GraphApiError && error.status === 400 && isInitialUrl && !state.filterUnsupported && link.includes("$filter=")) {
+        // The date filter is not accepted by this mailbox; enumerate without it and filter client-side.
+        state = await updateSyncState(account, { outlook: { filterUnsupported: true, [spec.linkKey]: null } }).then((s) => s.outlook ?? {});
         link = null;
         continue;
       }
@@ -97,25 +101,53 @@ async function syncFolder(client: GraphClient, account: EmailAccount, spec: Fold
   }
 }
 
-/** Registers or renews a change-notification subscription so new inbox mail is pushed to the CRM. */
-export async function ensureOutlookSubscription(client: GraphClient, account: EmailAccount): Promise<void> {
-  const secret = env.microsoft.webhookSecret;
-  if (!secret) return;
+export type SubscriptionOutcome =
+  | { status: "unchanged" | "renewed" | "created" }
+  | { status: "skipped"; reason: string }
+  | { status: "failed"; reason: string };
+
+/** Whether Graph could reach this deployment's webhook: a public HTTPS address is required. */
+export function outlookPushPossible(): { ok: boolean; reason?: string } {
+  if (!env.microsoft.webhookSecret) return { ok: false, reason: "MICROSOFT_WEBHOOK_SECRET is not set." };
+  const url = env.appUrl;
+  if (!url.startsWith("https://") || /^https:\/\/(localhost|127\.0\.0\.1)/.test(url)) {
+    return { ok: false, reason: "Push notifications need the public HTTPS address of the deployment (APP_URL)." };
+  }
+  return { ok: true };
+}
+
+/** Identifies the secret and endpoint a subscription was created with, so rotation triggers a re-registration. */
+function subscriptionFingerprint(secret: string, notificationUrl: string): string {
+  return createHash("sha256").update(`${secret}|${notificationUrl}`).digest("hex").slice(0, 32);
+}
+
+/**
+ * Registers or renews a change-notification subscription so new inbox mail is pushed to the CRM.
+ * With `force`, any existing subscription is replaced.
+ */
+export async function ensureOutlookSubscription(client: GraphClient, account: EmailAccount, options: { force?: boolean } = {}): Promise<SubscriptionOutcome> {
+  const possible = outlookPushPossible();
+  if (!possible.ok) return { status: "skipped", reason: possible.reason ?? "Push notifications are not configured." };
+  const secret = env.microsoft.webhookSecret!;
   const notificationUrl = `${env.appUrl}/api/webhooks/outlook`;
-  if (/^https?:\/\/(localhost|127\.0\.0\.1)/.test(notificationUrl) || !notificationUrl.startsWith("https://")) return;
+  const fingerprint = subscriptionFingerprint(secret, notificationUrl);
+  const configChanged = account.syncState.outlook?.subscriptionConfig !== undefined && account.syncState.outlook?.subscriptionConfig !== fingerprint;
 
   const now = Date.now();
   const expiration = new Date(now + SUBSCRIPTION_MINUTES * 60_000);
   try {
-    if (account.watchId && account.watchExpiresAt) {
-      if (account.watchExpiresAt.getTime() - now > RENEW_WHEN_LEFT_MS) return;
+    if (account.watchId && account.watchExpiresAt && !options.force && !configChanged) {
+      if (account.watchExpiresAt.getTime() - now > RENEW_WHEN_LEFT_MS) return { status: "unchanged" };
       try {
         const renewed = await client.renewSubscription(account.watchId, expiration);
         await updateEmailAccount(account.id, { watchExpiresAt: new Date(renewed.expirationDateTime) });
-        return;
+        return { status: "renewed" };
       } catch (error) {
         if (!(error instanceof GraphApiError && error.status === 404)) throw error;
       }
+    } else if (account.watchId) {
+      // Replace rather than orphan the previous subscription (it would keep posting notifications we reject).
+      await client.deleteSubscription(account.watchId).catch(() => undefined);
     }
     const created = await client.createSubscription({
       resource: "me/mailFolders('inbox')/messages",
@@ -125,11 +157,13 @@ export async function ensureOutlookSubscription(client: GraphClient, account: Em
       expirationDateTime: expiration,
     });
     await updateEmailAccount(account.id, { watchId: created.id, watchExpiresAt: new Date(created.expirationDateTime) });
-    await updateSyncState(account, { outlook: { subscriptionError: null } });
+    await updateSyncState(account, { outlook: { subscriptionError: null, subscriptionConfig: fingerprint } });
+    return { status: "created" };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unable to register push notifications";
     console.error("[outlook] subscription failed:", error);
     await updateSyncState(account, { outlook: { subscriptionError: message } });
+    return { status: "failed", reason: message };
   }
 }
 

@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { clients, messages, type Client, type Message, type Settings, type WhatsAppMedia } from "@/lib/db/schema";
 import { isAutomatedEmail } from "@/lib/gmail/mime";
@@ -38,11 +38,16 @@ async function touchClient(client: Client, direction: "inbound" | "outbound", at
 // Email
 // ---------------------------------------------------------------------------
 
+/** Automatic replies are never sent for mail older than this, for example after a mailbox was reconnected. */
+const AUTO_REPLY_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
 export type IngestEmailInput = {
   parsed: ParsedEmail;
   accountEmail: string;
   /** The connected mailbox the message came from. */
   accountId: string | null;
+  /** Addresses of every connected mailbox, so mail between the agent's own mailboxes is not mistaken for a client. */
+  selfAddresses?: string[];
   /** Messages that pre-date the connection are stored silently: no notification, no automatic reply. */
   historical: boolean;
   settings: Settings;
@@ -51,11 +56,12 @@ export type IngestEmailInput = {
 export async function ingestEmail(input: IngestEmailInput): Promise<IngestResult> {
   const { parsed, settings } = input;
   const self = input.accountEmail.toLowerCase();
-  const fromSelf = parsed.from?.address === self || parsed.labelIds.includes("SENT");
+  const selves = new Set([self, ...(input.selfAddresses ?? []).map((a) => a.toLowerCase())]);
+  const fromSelf = (parsed.from && selves.has(parsed.from.address)) || parsed.labelIds.includes("SENT");
   const direction: "inbound" | "outbound" = fromSelf ? "outbound" : "inbound";
 
-  let counterpart = direction === "inbound" ? parsed.from : (parsed.to.find((a) => a.address !== self) ?? parsed.to[0] ?? null);
-  if (!counterpart && direction === "outbound") counterpart = parsed.cc.find((a) => a.address !== self) ?? null;
+  let counterpart = direction === "inbound" ? parsed.from : (parsed.to.find((a) => !selves.has(a.address)) ?? parsed.to[0] ?? null);
+  if (!counterpart && direction === "outbound") counterpart = parsed.cc.find((a) => !selves.has(a.address)) ?? null;
   if (!counterpart) return { message: null, created: false, client: null };
 
   if (direction === "outbound" && !settings.syncSentMail) return { message: null, created: false, client: null };
@@ -66,19 +72,32 @@ export async function ingestEmail(input: IngestEmailInput): Promise<IngestResult
     if (!settings.trackUnknownSenders) return { message: null, created: false, client: null };
   }
 
-  // Mail sent from the CRM is stored before the provider's sent copy is synchronised.
-  // Outlook assigns a new id when a draft moves to Sent Items, so match on the Message-ID header too.
-  if (direction === "outbound" && parsed.messageIdHeader) {
+  // A message is stored once even when several mailboxes hold a copy (the agent's other address on
+  // CC, or a client writing to both addresses). Mail sent from the CRM is also stored before the
+  // provider's sent copy is synchronised, and Outlook assigns a new id when a draft moves to Sent
+  // Items, so the RFC Message-ID is the stable identity.
+  if (parsed.messageIdHeader) {
     const existing = await db.query.messages.findFirst({
       where: and(eq(messages.channel, "email"), eq(messages.messageIdHeader, parsed.messageIdHeader)),
-      columns: { id: true, externalId: true, accountId: true, threadId: true },
+      orderBy: [asc(messages.createdAt)],
+      columns: { id: true, externalId: true, accountId: true, threadId: true, direction: true },
     });
     if (existing) {
-      if (existing.externalId !== parsed.id || !existing.accountId) {
-        await db
-          .update(messages)
-          .set({ externalId: parsed.id, accountId: existing.accountId ?? input.accountId, threadId: existing.threadId ?? parsed.threadId })
-          .where(eq(messages.id, existing.id));
+      const ownRow = existing.accountId === null || existing.accountId === input.accountId;
+      if (ownRow && existing.direction === "outbound" && direction === "outbound" && (existing.externalId !== parsed.id || !existing.accountId)) {
+        // Point the CRM-sent row at the provider's copy, unless that id is already taken by another row.
+        const taken = await db.query.messages.findFirst({
+          where: and(eq(messages.channel, "email"), eq(messages.externalId, parsed.id)),
+          columns: { id: true },
+        });
+        if (!taken) {
+          await db
+            .update(messages)
+            .set({ externalId: parsed.id, accountId: existing.accountId ?? input.accountId, threadId: existing.threadId ?? parsed.threadId })
+            .where(eq(messages.id, existing.id));
+        } else if (!existing.accountId) {
+          await db.update(messages).set({ accountId: input.accountId }).where(eq(messages.id, existing.id));
+        }
       }
       return { message: null, created: false, client };
     }
@@ -134,7 +153,7 @@ export async function ingestEmail(input: IngestEmailInput): Promise<IngestResult
       client,
       isNewContact,
       settings,
-      safeToReply: !isAutomatedEmail(parsed),
+      safeToReply: !isAutomatedEmail(parsed) && Date.now() - parsed.sentAt.getTime() < AUTO_REPLY_MAX_AGE_MS,
     });
     await dispatchWorkflowEvent({
       trigger: "message.received",

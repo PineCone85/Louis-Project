@@ -66,6 +66,16 @@ describe("parseGraphMessage", () => {
   it("escapes OData string literals", () => {
     expect(odataString("<a'b@example.com>")).toBe("'<a''b@example.com>'");
   });
+
+  it("classifies sync-state and bad-reference errors", async () => {
+    const { GraphApiError } = await import("@/lib/outlook/client");
+    expect(new GraphApiError(410, "gone").resyncRequired).toBe(true);
+    expect(new GraphApiError(400, "expired", "syncStateNotFound").resyncRequired).toBe(true);
+    expect(new GraphApiError(400, "bad", "ErrorInvalidIdMalformed").resyncRequired).toBe(false);
+    expect(new GraphApiError(400, "bad", "ErrorInvalidIdMalformed").badReference).toBe(true);
+    expect(new GraphApiError(404, "missing", "ErrorItemNotFound").badReference).toBe(true);
+    expect(new GraphApiError(403, "forbidden").badReference).toBe(false);
+  });
 });
 
 describe("sendViaOutlook", () => {
@@ -105,6 +115,7 @@ describe("sendViaOutlook", () => {
         const json = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status, headers: { "content-type": "application/json" } });
         if (url.endsWith("/createReply")) {
           if (url.includes("missing")) return json({ error: { code: "ErrorItemNotFound", message: "not found" } }, 404);
+          if (url.includes("foreign")) return json({ error: { code: "ErrorInvalidIdMalformed", message: "Id is malformed." } }, 400);
           return json({ id: "draft-reply", conversationId: "conv-1", internetMessageId: "<reply@outlook.com>", body: { contentType: "html", content: "<div>quoted original</div>" } });
         }
         if (method === "PATCH") return json({ id: "draft-reply", conversationId: "conv-1", internetMessageId: "<reply@outlook.com>" });
@@ -146,6 +157,14 @@ describe("sendViaOutlook", () => {
     expect(result).toEqual({ externalId: "draft-reply", threadId: "conv-1", messageIdHeader: "<reply@outlook.com>" });
     const auth = (vi.mocked(fetch).mock.calls[0][1] as RequestInit).headers as Record<string, string>;
     expect(auth.Authorization).toBe("Bearer access-token");
+  });
+
+  it("falls back to a new message when the id is malformed (foreign provider)", async () => {
+    const { sendViaOutlook } = await import("@/lib/outlook/send");
+    const result = await sendViaOutlook(account, { to: [{ name: null, address: "jane@example.com" }], subject: "Hello", html: "<p>Hello</p>", replyToExternalId: "foreign-gmail-id" });
+    expect(calls[0].url).toContain("/me/messages/foreign-gmail-id/createReply");
+    expect(calls[1].method + " " + calls[1].url.replace("https://graph.microsoft.com/v1.0", "")).toBe("POST /me/messages");
+    expect(result.externalId).toBe("sent-copy");
   });
 
   it("falls back to a new message when the original is gone, and resolves the sent copy id", async () => {

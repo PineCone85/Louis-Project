@@ -5,6 +5,7 @@ import { env } from "@/lib/env";
 import { formatDateTime } from "@/lib/format";
 import { googleRedirectUri } from "@/lib/gmail/oauth";
 import { microsoftRedirectUri } from "@/lib/outlook/oauth";
+import { outlookPushPossible } from "@/lib/outlook/sync";
 import { getSettings } from "@/lib/queries/settings";
 import { ActionButton, ConfirmButton } from "@/components/ui/form-controls";
 import { DescriptionList, EmptyState, PageBody, Panel, cx } from "@/components/ui/primitives";
@@ -20,11 +21,13 @@ const ERRORS: Record<string, string> = {
   profile: "The mailbox address could not be read from the Microsoft account. Make sure the account has a mailbox.",
   exchange: "The provider rejected the sign-in. Check the client ID, secret and redirect URI, then try again.",
   oauth: "The provider returned an error during sign-in. Please try again.",
+  mismatch: "You signed in with a different mailbox than the one you were reconnecting. The original mailbox is unchanged; connect the other one from the Add a mailbox section if you meant to.",
 };
 
 export default async function EmailSettingsPage({ searchParams }: { searchParams: Promise<{ connected?: string; error?: string; provider?: string }> }) {
   const [params, accounts, settings] = await Promise.all([searchParams, listEmailAccounts(), getSettings()]);
   const providers = configuredProviders();
+  const outlookPush = outlookPushPossible();
   const providerName = params.provider ? providerLabel(params.provider) : "The mailbox";
   const gmailPushUrl = `${env.appUrl}/api/webhooks/gmail?token=${env.google.pushToken ?? "{GMAIL_PUSH_TOKEN}"}`;
   const outlookPushUrl = `${env.appUrl}/api/webhooks/outlook`;
@@ -45,7 +48,8 @@ export default async function EmailSettingsPage({ searchParams }: { searchParams
           ) : (
             <ul className="divide-y divide-line">
               {accounts.map((account) => {
-                const pushConfigured = account.provider === "gmail" ? Boolean(env.google.pubsubTopic) : Boolean(env.microsoft.webhookSecret);
+                const pushConfigured = account.provider === "gmail" ? Boolean(env.google.pubsubTopic) : outlookPush.ok;
+                const reconnectHref = `${account.provider === "gmail" ? "/api/auth/google" : "/api/auth/microsoft"}?hint=${encodeURIComponent(account.emailAddress)}`;
                 const subscriptionError = account.provider === "outlook" ? account.syncState.outlook?.subscriptionError : null;
                 const disconnect = disconnectEmailAccountAction.bind(null, account.id);
                 const enablePush = enablePushAction.bind(null, account.id);
@@ -63,7 +67,7 @@ export default async function EmailSettingsPage({ searchParams }: { searchParams
                             {account.watchExpiresAt ? "Renew push" : "Enable push"}
                           </ActionButton>
                         ) : null}
-                        <a href={account.provider === "gmail" ? "/api/auth/google" : "/api/auth/microsoft"} className="btn btn-secondary btn-sm">
+                        <a href={reconnectHref} className="btn btn-secondary btn-sm">
                           Reconnect
                         </a>
                         <ConfirmButton
@@ -89,7 +93,9 @@ export default async function EmailSettingsPage({ searchParams }: { searchParams
                             ? `Active until ${formatDateTime(account.watchExpiresAt, settings.timezone)} (renewed automatically)`
                             : pushConfigured
                               ? "Not registered yet"
-                              : "Not configured (polling only)",
+                              : account.provider === "outlook" && env.microsoft.webhookSecret && !outlookPush.ok
+                                ? outlookPush.reason
+                                : "Not configured (polling only)",
                         },
                       ]}
                     />

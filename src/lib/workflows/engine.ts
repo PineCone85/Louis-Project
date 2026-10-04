@@ -316,7 +316,7 @@ async function runAction(action: WorkflowAction, env: Env): Promise<WorkflowStep
           contactName: route.name,
           accountId: inbound?.accountId ?? null,
           replyTo: inbound
-            ? { threadId: inbound.threadId, messageIdHeader: inbound.messageIdHeader, references: inbound.referencesHeader, externalId: inbound.externalId }
+            ? { threadId: inbound.threadId, messageIdHeader: inbound.messageIdHeader, references: inbound.referencesHeader, externalId: inbound.externalId, accountId: inbound.accountId }
             : null,
           isAutoReply: true,
         });

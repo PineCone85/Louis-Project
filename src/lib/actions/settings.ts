@@ -142,15 +142,12 @@ export async function enablePushAction(accountId: string): Promise<ActionResult>
   await requireSession();
   const account = await getEmailAccount(accountId);
   if (!account) return { ok: false, error: "This mailbox is no longer connected." };
-  const fresh = { ...account, watchExpiresAt: null, watchId: null };
   try {
     if (account.provider === "gmail") {
-      await ensureGmailWatch(new GmailClient(account), fresh);
+      await ensureGmailWatch(new GmailClient(account), { ...account, watchExpiresAt: null, watchId: null });
     } else {
-      await ensureOutlookSubscription(new GraphClient(account), fresh);
-      const after = await getEmailAccount(accountId);
-      const problem = after?.syncState.outlook?.subscriptionError;
-      if (problem) return { ok: false, error: problem };
+      const outcome = await ensureOutlookSubscription(new GraphClient(account), account, { force: true });
+      if (outcome.status === "skipped" || outcome.status === "failed") return { ok: false, error: outcome.reason };
     }
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "Unable to register push notifications" };

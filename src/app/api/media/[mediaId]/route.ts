@@ -18,13 +18,16 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ me
     const upstream = await downloadMedia(info.url);
     const mimeType = info.mime_type || row.media?.mimeType || "application/octet-stream";
     const filename = (row.media?.filename ?? `whatsapp-${mediaId}`).replace(/[^\w.\- ]+/g, "_");
-    const inline = /^(image\/|video\/|audio\/|application\/pdf)/.test(mimeType);
+    // Only well-known media types render in the browser; SVG and other documents are downloaded.
+    const type = mimeType.toLowerCase().split(";")[0].trim();
+    const inline = /^(image\/(png|jpeg|gif|webp)|video\/(mp4|3gpp|webm)|audio\/(ogg|mpeg|mp4|aac|amr|webm)|application\/pdf)$/.test(type);
     return new NextResponse(upstream.body, {
       headers: {
-        "Content-Type": mimeType,
+        "Content-Type": inline ? type : "application/octet-stream",
         "Content-Disposition": `${inline ? "inline" : "attachment"}; filename="${filename}"`,
         "Cache-Control": "private, max-age=300",
         "X-Content-Type-Options": "nosniff",
+        "Content-Security-Policy": "sandbox; default-src 'none'; style-src 'unsafe-inline'",
       },
     });
   } catch (error) {

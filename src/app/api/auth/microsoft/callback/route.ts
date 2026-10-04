@@ -35,9 +35,9 @@ export async function GET(request: NextRequest) {
   const code = params.get("code");
   const state = params.get("state");
   const raw = request.cookies.get(OAUTH_COOKIE)?.value;
-  let stored: { state?: string; verifier?: string } = {};
+  let stored: { state?: string; verifier?: string; hint?: string | null } = {};
   try {
-    stored = raw ? (JSON.parse(raw) as { state?: string; verifier?: string }) : {};
+    stored = raw ? (JSON.parse(raw) as { state?: string; verifier?: string; hint?: string | null }) : {};
   } catch {
     stored = {};
   }
@@ -55,6 +55,8 @@ export async function GET(request: NextRequest) {
     }
 
     const profile = await fetchMicrosoftProfile(tokens.access_token);
+    // A reconnect must land on the mailbox it was started for, not on whichever account the user picked.
+    if (stored.hint && profile.emailAddress !== stored.hint) return settingsRedirect({ error: "mismatch" });
     const account = await saveEmailAccount({
       provider: "outlook",
       emailAddress: profile.emailAddress,

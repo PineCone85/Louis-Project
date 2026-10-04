@@ -109,6 +109,7 @@ export async function evaluateAutoReply(ctx: AutoReplyContext): Promise<void> {
             messageIdHeader: ctx.message.messageIdHeader,
             references: ctx.message.referencesHeader,
             externalId: ctx.message.externalId,
+            accountId: ctx.message.accountId,
           },
           isAutoReply: true,
           autoReplyRuleId: rule.id,

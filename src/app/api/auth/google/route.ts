@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
   const url = buildAuthorizationUrl({ state, codeChallenge: challenge, loginHint });
 
   const response = NextResponse.redirect(url);
-  response.cookies.set(OAUTH_COOKIE, JSON.stringify({ state, verifier }), {
+  response.cookies.set(OAUTH_COOKIE, JSON.stringify({ state, verifier, hint: loginHint?.toLowerCase() ?? null }), {
     httpOnly: true,
     sameSite: "lax",
     secure: env.isProduction,
