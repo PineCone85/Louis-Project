@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { env } from "@/lib/env";
 import { formatSmartDate, truncate } from "@/lib/format";
-import { getGmailAccount } from "@/lib/gmail/account";
+import { listEmailAccounts } from "@/lib/email/accounts";
 import { formatPhone } from "@/lib/phone";
 import { listClientsBrief } from "@/lib/queries/clients";
 import { getConversationMessages, listConversations, markConversationRead } from "@/lib/queries/messages";
@@ -24,12 +24,13 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
   const unreadOnly = params.filter === "unread";
   const channel = params.channel === "email" || params.channel === "whatsapp" ? params.channel : undefined;
   const clientsOnly = params.who === "clients";
-  const [conversations, settings, gmail, templates] = await Promise.all([
+  const [conversations, settings, emailAccounts, templates] = await Promise.all([
     listConversations({ unreadOnly, channel, clientsOnly }),
     getSettings(),
-    getGmailAccount(),
+    listEmailAccounts(),
     listTemplates(),
   ]);
+  const emailOptions = emailAccounts.map((a) => ({ id: a.id, provider: a.provider, emailAddress: a.emailAddress }));
 
   /** Query string for the currently active filters, used to keep them when navigating. */
   const activeFilters: Record<string, string | undefined> = {
@@ -108,9 +109,9 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
                 description={
                   clientsOnly
                     ? "Only conversations linked to a client are shown. Switch to Everyone to see all contacts."
-                    : gmail || env.whatsapp.configured
+                    : emailAccounts.length > 0 || env.whatsapp.configured
                     ? "Messages from clients will appear here as they arrive."
-                    : "Connect Gmail or configure WhatsApp in Settings to start receiving client messages."
+                    : "Connect Gmail or Outlook, or configure WhatsApp, in Settings to start receiving client messages."
                 }
               />
             ) : (
@@ -188,7 +189,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
                   timezone={settings.timezone}
                   emailSignature={settings.emailSignature}
                   renderContext={{ agentName: settings.agentName, agencyName: settings.agencyName, agentPhone: settings.agentPhone }}
-                  gmail={{ connected: Boolean(gmail) || env.demo }}
+                  email={{ accounts: emailOptions, demo: env.demo }}
                   whatsapp={{ configured: env.whatsapp.configured || env.demo, window: whatsappWindow }}
                   ai={{ configured: env.anthropic.configured }}
                   templates={templates}

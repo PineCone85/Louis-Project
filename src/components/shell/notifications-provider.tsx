@@ -13,14 +13,14 @@ type LatestNotification = { id: string; title: string; body: string | null; clie
 
 type PollResponse = Counts & {
   latest: LatestNotification[];
-  gmail: { connected: boolean; lastSyncAt: string | null; error: string | null };
+  email: { connected: boolean; error: string | null };
 };
 
 type Toast = { id: string; title: string; body: string | null; href: string };
 
 type ContextValue = {
   counts: Counts;
-  gmailError: string | null;
+  emailError: string | null;
   refresh: (sync?: boolean) => Promise<void>;
   syncing: boolean;
 };
@@ -32,7 +32,7 @@ const POLL_INTERVAL_MS = 45_000;
 export function NotificationsProvider({ initial, children }: { initial: Counts; children: ReactNode }) {
   const router = useRouter();
   const [counts, setCounts] = useState<Counts>(initial);
-  const [gmailError, setGmailError] = useState<string | null>(null);
+  const [emailError, setEmailError] = useState<string | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [syncing, setSyncing] = useState(false);
   const lastSeenAt = useRef<string>(new Date().toISOString());
@@ -48,7 +48,7 @@ export function NotificationsProvider({ initial, children }: { initial: Counts; 
         if (!response.ok) return;
         const data = (await response.json()) as PollResponse;
         setCounts({ unreadNotifications: data.unreadNotifications, unreadMessages: data.unreadMessages });
-        setGmailError(data.gmail.error);
+        setEmailError(data.email?.error ?? null);
         const fresh = data.latest.filter((n) => n.createdAt > lastSeenAt.current);
         if (fresh.length > 0) {
           lastSeenAt.current = fresh.reduce((max, n) => (n.createdAt > max ? n.createdAt : max), lastSeenAt.current);
@@ -88,7 +88,7 @@ export function NotificationsProvider({ initial, children }: { initial: Counts; 
     return () => window.clearTimeout(timer);
   }, [toasts]);
 
-  const value = useMemo(() => ({ counts, gmailError, refresh, syncing }), [counts, gmailError, refresh, syncing]);
+  const value = useMemo(() => ({ counts, emailError, refresh, syncing }), [counts, emailError, refresh, syncing]);
 
   return (
     <NotificationsContext.Provider value={value}>

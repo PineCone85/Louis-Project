@@ -4,19 +4,22 @@ import { useActionState, useMemo, useState } from "react";
 import { sendEmailAction } from "@/lib/actions/messages";
 import { renderTemplate, withSignature, type RenderContext } from "@/lib/auto-reply/render";
 import type { Template } from "@/lib/db/schema";
-import { replySubject } from "@/lib/gmail/mime";
+import { replySubject } from "@/lib/email/html";
+import { providerLabel, type EmailAccountOption } from "@/lib/email/types";
 import type { ActionResult } from "@/lib/validation";
 import { SubmitButton } from "@/components/ui/form-controls";
 import { DraftButton } from "./draft-button";
 import { Field, cx } from "@/components/ui/primitives";
 
-export type EmailThreadOption = { threadId: string; subject: string; lastAt: Date };
+export type EmailThreadOption = { threadId: string; subject: string; lastAt: Date; accountId: string | null };
 
 type Props = {
   clientId: string | null;
   contactName: string | null;
   client: { firstName: string; lastName: string } | null;
   emails: string[];
+  /** Connected mailboxes; empty in demo mode. */
+  accounts: EmailAccountOption[];
   threads: EmailThreadOption[];
   selectedThreadId: string | null;
   onSelectThread: (threadId: string | null) => void;
@@ -47,7 +50,13 @@ export function EmailComposer(props: Props) {
   const [body, setBody] = useState(() => withSignature("", props.signature).replace(/^\n+/, "\n\n"));
   const [templateId, setTemplateId] = useState("");
   const [to, setTo] = useState(props.emails[0] ?? "");
+  const [accountId, setAccountId] = useState(props.accounts[0]?.id ?? "");
   const errors = (!state.ok && state.fieldErrors) || {};
+
+  // Replies always leave from the mailbox that holds the conversation.
+  const threadAccount = thread?.accountId ? (props.accounts.find((a) => a.id === thread.accountId) ?? null) : null;
+  const effectiveAccountId = threadAccount?.id ?? accountId;
+  const fromAccount = props.accounts.find((a) => a.id === effectiveAccountId) ?? props.accounts[0] ?? null;
 
   const context = useMemo<RenderContext>(
     () => ({ client: props.client, contactName: props.contactName, settings: props.renderContext }),
@@ -67,6 +76,25 @@ export function EmailComposer(props: Props) {
       {props.clientId ? <input type="hidden" name="clientId" value={props.clientId} /> : null}
       <input type="hidden" name="toName" value={props.contactName ?? ""} />
       {thread ? <input type="hidden" name="threadId" value={thread.threadId} /> : null}
+      {effectiveAccountId ? <input type="hidden" name="accountId" value={effectiveAccountId} /> : null}
+
+      {props.accounts.length > 1 ? (
+        <Field label="From" htmlFor="email-from" hint={threadAccount ? "Replies are sent from the mailbox that received the conversation." : undefined}>
+          <select
+            id="email-from"
+            className="select"
+            value={effectiveAccountId}
+            disabled={Boolean(threadAccount)}
+            onChange={(e) => setAccountId(e.target.value)}
+          >
+            {props.accounts.map((account) => (
+              <option key={account.id} value={account.id}>
+                {providerLabel(account.provider)} · {account.emailAddress}
+              </option>
+            ))}
+          </select>
+        </Field>
+      ) : null}
 
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         <Field label="To" htmlFor="email-to" error={errors.to}>
@@ -133,7 +161,9 @@ export function EmailComposer(props: Props) {
       ) : null}
       {!state.ok && state.error ? <p className="form-error">{state.error}</p> : null}
       <div className="flex items-center justify-between gap-3">
-        <span className="text-[12px] text-ink-faint">Sent through your connected Gmail account and saved to the timeline.</span>
+        <span className="text-[12px] text-ink-faint">
+          {fromAccount ? `Sent from ${providerLabel(fromAccount.provider)} (${fromAccount.emailAddress}) and saved to the timeline.` : "Sending is simulated in demo mode."}
+        </span>
         <SubmitButton pendingText="Sending…">Send email</SubmitButton>
       </div>
     </form>

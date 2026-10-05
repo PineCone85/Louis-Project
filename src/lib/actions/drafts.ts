@@ -5,8 +5,8 @@ import { revalidatePath } from "next/cache";
 import { requireSession } from "@/lib/auth/session";
 import { db } from "@/lib/db";
 import { messageDrafts } from "@/lib/db/schema";
-import { sendEmail } from "@/lib/gmail/send";
-import { replySubject } from "@/lib/gmail/mime";
+import { sendEmail } from "@/lib/email/send";
+import { replySubject } from "@/lib/email/html";
 import { latestEmailInThread } from "@/lib/queries/messages";
 import { sendWhatsAppText } from "@/lib/whatsapp/send";
 import { WhatsAppApiError } from "@/lib/whatsapp/client";
@@ -33,12 +33,14 @@ export async function sendDraftAction(_prev: ActionResult, formData: FormData): 
     let sentId: string;
     if (draft.channel === "email") {
       if (!subject.trim()) return { ok: false, fieldErrors: { subject: "Subject is required" } };
-      let replyTo: { threadId: string | null; messageIdHeader: string | null; references: string | null } | null = null;
+      let replyTo: { threadId: string | null; messageIdHeader: string | null; references: string | null; externalId: string | null; accountId: string | null } | null = null;
+      let accountId: string | null = null;
       let finalSubject = subject;
       if (draft.threadId) {
         const last = await latestEmailInThread(draft.threadId);
         if (last) {
-          replyTo = { threadId: draft.threadId, messageIdHeader: last.messageIdHeader, references: last.referencesHeader };
+          replyTo = { threadId: draft.threadId, messageIdHeader: last.messageIdHeader, references: last.referencesHeader, externalId: last.externalId, accountId: last.accountId };
+          accountId = last.accountId;
           finalSubject = replySubject(subject);
         }
       }
@@ -48,6 +50,7 @@ export async function sendDraftAction(_prev: ActionResult, formData: FormData): 
         text: body,
         clientId: draft.clientId,
         contactName: draft.contactName,
+        accountId,
         replyTo,
       });
       sentId = sent.id;

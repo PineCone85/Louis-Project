@@ -85,6 +85,25 @@ export const env = {
       return read("GMAIL_PUSH_TOKEN");
     },
   },
+  microsoft: {
+    get clientId(): string | undefined {
+      return read("MICROSOFT_CLIENT_ID");
+    },
+    get clientSecret(): string | undefined {
+      return read("MICROSOFT_CLIENT_SECRET");
+    },
+    /** Entra tenant: "common" (default) accepts both work/school and personal Microsoft accounts. */
+    get tenant(): string {
+      return read("MICROSOFT_TENANT") ?? "common";
+    },
+    get configured(): boolean {
+      return Boolean(read("MICROSOFT_CLIENT_ID") && read("MICROSOFT_CLIENT_SECRET"));
+    },
+    /** Shared secret (clientState) for Graph change notifications. Enables instant Outlook delivery when set. */
+    get webhookSecret(): string | undefined {
+      return read("MICROSOFT_WEBHOOK_SECRET");
+    },
+  },
   anthropic: {
     get apiKey(): string | undefined {
       return read("ANTHROPIC_API_KEY");

@@ -91,7 +91,7 @@ export async function evaluateAutoReply(ctx: AutoReplyContext): Promise<void> {
     try {
       let sentMessageId: string | null = null;
       if (ctx.channel === "email") {
-        const { sendEmail } = await import("@/lib/gmail/send");
+        const { sendEmail } = await import("@/lib/email/send");
         const subject = template.subject
           ? renderTemplate(template.subject, renderContext)
           : ctx.message.subject
@@ -103,10 +103,13 @@ export async function evaluateAutoReply(ctx: AutoReplyContext): Promise<void> {
           text: withSignature(body, settings.emailSignature),
           clientId: ctx.client?.id ?? null,
           contactName: ctx.message.contactName,
+          accountId: ctx.message.accountId,
           replyTo: {
             threadId: ctx.message.threadId,
             messageIdHeader: ctx.message.messageIdHeader,
             references: ctx.message.referencesHeader,
+            externalId: ctx.message.externalId,
+            accountId: ctx.message.accountId,
           },
           isAutoReply: true,
           autoReplyRuleId: rule.id,

@@ -1,5 +1,5 @@
-import type { GmailAccount } from "@/lib/db/schema";
-import { getValidAccessToken } from "./account";
+import type { EmailAccount } from "@/lib/db/schema";
+import { getValidAccessToken } from "@/lib/email/accounts";
 
 const BASE_URL = "https://gmail.googleapis.com/gmail/v1/users/me";
 
@@ -48,10 +48,10 @@ export type GmailWatchResponse = { historyId: string; expiration: string };
 export type GmailSendResponse = { id: string; threadId: string; labelIds?: string[] };
 
 export class GmailClient {
-  private account: GmailAccount;
+  private account: EmailAccount;
   private token: string | null = null;
 
-  constructor(account: GmailAccount) {
+  constructor(account: EmailAccount) {
     this.account = account;
   }
 

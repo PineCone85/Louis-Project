@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Building2, Inbox, KanbanSquare, LayoutDashboard, Settings, Sparkles, Users } from "lucide-react";
 import { APP_NAME } from "@/lib/constants";
+import { providerLabel } from "@/lib/email/types";
 import { cx } from "@/components/ui/primitives";
 import { useNotifications } from "./notifications-provider";
 
@@ -20,7 +21,7 @@ const NAV: Array<{ href: string; label: string; icon: typeof Inbox; exact?: bool
 type Props = {
   agentName: string;
   agencyName: string;
-  gmail: { connected: boolean; email: string | null; error: string | null };
+  email: { accounts: Array<{ id: string; provider: string; emailAddress: string; error: string | null }>; demo: boolean };
   whatsapp: { configured: boolean };
   /** Messages drafted by workflows that are waiting for review. */
   pendingDrafts: number;
@@ -31,11 +32,10 @@ function StatusDot({ ok, warn }: { ok: boolean; warn?: boolean }) {
   return <span className={cx("inline-block h-1.5 w-1.5 rounded-full", ok ? (warn ? "bg-danger" : "bg-sage-500") : "bg-line-strong")} />;
 }
 
-export function Sidebar({ agentName, agencyName, gmail, whatsapp, pendingDrafts, signOut }: Props) {
+export function Sidebar({ agentName, agencyName, email, whatsapp, pendingDrafts, signOut }: Props) {
   const pathname = usePathname();
-  const { counts, gmailError } = useNotifications();
+  const { counts, emailError } = useNotifications();
   const unread = counts.unreadMessages.total;
-  const gmailWarning = Boolean(gmail.error || gmailError);
 
   const links = NAV.map((item) => {
     const active = item.exact ? pathname === item.href : pathname === item.href || pathname.startsWith(`${item.href}/`);
@@ -62,10 +62,24 @@ export function Sidebar({ agentName, agencyName, gmail, whatsapp, pendingDrafts,
         <nav className="flex flex-col gap-0.5 px-3">{links}</nav>
         <div className="mt-auto border-t border-line px-5 py-4">
           <div className="space-y-1.5 text-[12px] text-ink-muted">
-            <Link href="/settings/gmail" className="flex items-center gap-2 hover:text-ink">
-              <StatusDot ok={gmail.connected} warn={gmailWarning} />
-              <span className="truncate">{gmail.connected ? (gmailWarning ? "Gmail needs attention" : gmail.email) : "Gmail not connected"}</span>
-            </Link>
+            {email.accounts.length === 0 ? (
+              <Link href="/settings/email" className="flex items-center gap-2 hover:text-ink">
+                <StatusDot ok={email.demo} />
+                <span className="truncate">{email.demo ? "Email (simulated)" : "No email connected"}</span>
+              </Link>
+            ) : (
+              email.accounts.slice(0, 3).map((account) => {
+                const warning = Boolean(account.error) || (emailError?.startsWith(account.emailAddress) ?? false);
+                return (
+                  <Link key={account.id} href="/settings/email" className="flex items-center gap-2 hover:text-ink" title={account.error ?? account.emailAddress}>
+                    <StatusDot ok warn={warning} />
+                    <span className="truncate">
+                      {warning ? `${providerLabel(account.provider)} needs attention` : `${providerLabel(account.provider)} · ${account.emailAddress}`}
+                    </span>
+                  </Link>
+                );
+              })
+            )}
             <Link href="/settings/whatsapp" className="flex items-center gap-2 hover:text-ink">
               <StatusDot ok={whatsapp.configured} />
               <span>{whatsapp.configured ? "WhatsApp connected" : "WhatsApp not configured"}</span>

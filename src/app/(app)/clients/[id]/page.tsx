@@ -6,7 +6,7 @@ import { archiveClientAction, deleteClientAction } from "@/lib/actions/clients";
 import { CLIENT_TYPES, labelFor } from "@/lib/constants";
 import { env } from "@/lib/env";
 import { formatCurrency, formatDate, formatDateTime, fullName } from "@/lib/format";
-import { getGmailAccount } from "@/lib/gmail/account";
+import { listEmailAccounts } from "@/lib/email/accounts";
 import { formatPhone } from "@/lib/phone";
 import { getClient, getClientActivities, getClientMessages, getClientProperties } from "@/lib/queries/clients";
 import { markClientMessagesRead } from "@/lib/queries/messages";
@@ -31,12 +31,12 @@ export default async function ClientPage({ params }: { params: Promise<{ id: str
 
   await Promise.all([markClientMessagesRead(client.id), markNotificationsReadForClient(client.id)]);
 
-  const [linkedProperties, messages, activities, settings, gmail, templates, propertyOptions] = await Promise.all([
+  const [linkedProperties, messages, activities, settings, emailAccounts, templates, propertyOptions] = await Promise.all([
     getClientProperties(client.id),
     getClientMessages(client.id),
     getClientActivities(client.id),
     getSettings(),
-    getGmailAccount(),
+    listEmailAccounts(),
     listTemplates(),
     listPropertiesBrief(),
   ]);
@@ -89,7 +89,7 @@ export default async function ClientPage({ params }: { params: Promise<{ id: str
               timezone={settings.timezone}
               emailSignature={settings.emailSignature}
               renderContext={{ agentName: settings.agentName, agencyName: settings.agencyName, agentPhone: settings.agentPhone }}
-              gmail={{ connected: Boolean(gmail) || env.demo }}
+              email={{ accounts: emailAccounts.map((a) => ({ id: a.id, provider: a.provider, emailAddress: a.emailAddress })), demo: env.demo }}
               whatsapp={{ configured: env.whatsapp.configured || env.demo, window: whatsappWindow }}
               ai={{ configured: env.anthropic.configured }}
               templates={templates}

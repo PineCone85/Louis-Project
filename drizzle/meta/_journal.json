@@ -29,6 +29,20 @@
       "when": 1789582565186,
       "tag": "0003_workflows_and_pipeline",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1790940744600,
+      "tag": "0004_email_accounts",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1791060935403,
+      "tag": "0005_message_id_index",
+      "breakpoints": true
     }
   ]
 }

@@ -1,0 +1,1 @@
+CREATE INDEX "messages_message_id_header_idx" ON "messages" USING btree ("channel","message_id_header");

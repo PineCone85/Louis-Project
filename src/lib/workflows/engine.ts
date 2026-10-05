@@ -300,7 +300,7 @@ async function runAction(action: WorkflowAction, env: Env): Promise<WorkflowStep
       };
       const body = renderTemplate(template.body, renderContext);
       if (route.channel === "email") {
-        const { sendEmail } = await import("@/lib/gmail/send");
+        const { sendEmail } = await import("@/lib/email/send");
         const { withSignature } = await import("@/lib/auto-reply/render");
         const inbound = event.message && event.message.channel === "email" && event.message.direction === "inbound" ? event.message : null;
         const subject = template.subject
@@ -314,7 +314,10 @@ async function runAction(action: WorkflowAction, env: Env): Promise<WorkflowStep
           text: withSignature(body, env.settings.emailSignature),
           clientId: target.client?.id ?? null,
           contactName: route.name,
-          replyTo: inbound ? { threadId: inbound.threadId, messageIdHeader: inbound.messageIdHeader, references: inbound.referencesHeader } : null,
+          accountId: inbound?.accountId ?? null,
+          replyTo: inbound
+            ? { threadId: inbound.threadId, messageIdHeader: inbound.messageIdHeader, references: inbound.referencesHeader, externalId: inbound.externalId, accountId: inbound.accountId }
+            : null,
           isAutoReply: true,
         });
       } else {

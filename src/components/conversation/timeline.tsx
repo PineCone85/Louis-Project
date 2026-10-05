@@ -6,6 +6,7 @@ import { useMemo, useState } from "react";
 import { deleteActivityAction } from "@/lib/actions/clients";
 import type { RenderContext } from "@/lib/auto-reply/render";
 import type { Activity, Message, Template } from "@/lib/db/schema";
+import type { EmailAccountOption } from "@/lib/email/types";
 import { formatDateTime } from "@/lib/format";
 import type { WhatsAppWindow } from "@/lib/whatsapp/send";
 import { ConfirmButton } from "@/components/ui/form-controls";
@@ -30,7 +31,8 @@ type Props = {
   timezone: string;
   emailSignature: string;
   renderContext: RenderContext["settings"];
-  gmail: { connected: boolean };
+  /** Connected mailboxes the agent can send from. In demo mode sending is simulated. */
+  email: { accounts: EmailAccountOption[]; demo: boolean };
   whatsapp: { configured: boolean; window: WhatsAppWindow | null };
   /** Whether AI reply drafting is available (ANTHROPIC_API_KEY set). */
   ai?: { configured: boolean };
@@ -44,7 +46,8 @@ type Filter = "all" | "email" | "whatsapp" | "activity";
 
 export function Timeline(props: Props) {
   const router = useRouter();
-  const emailAvailable = props.gmail.connected && props.contact.emails.length > 0;
+  const emailConnected = props.email.accounts.length > 0 || props.email.demo;
+  const emailAvailable = emailConnected && props.contact.emails.length > 0;
   const whatsappAvailable = props.whatsapp.configured && props.contact.phones.length > 0;
   const [channel, setChannel] = useState<"email" | "whatsapp">(
     props.defaultChannel ?? (emailAvailable ? "email" : whatsappAvailable ? "whatsapp" : "email"),
@@ -59,7 +62,12 @@ export function Timeline(props: Props) {
       if (message.channel !== "email" || !message.threadId) continue;
       const existing = map.get(message.threadId);
       if (!existing || message.sentAt > existing.lastAt) {
-        map.set(message.threadId, { threadId: message.threadId, subject: existing?.subject ?? message.subject ?? "", lastAt: message.sentAt });
+        map.set(message.threadId, {
+          threadId: message.threadId,
+          subject: existing?.subject ?? message.subject ?? "",
+          lastAt: message.sentAt,
+          accountId: message.accountId ?? existing?.accountId ?? null,
+        });
       }
     }
     return Array.from(map.values()).sort((a, b) => b.lastAt.getTime() - a.lastAt.getTime());
@@ -98,7 +106,7 @@ export function Timeline(props: Props) {
       key: "email",
       label: "Email",
       available: emailAvailable,
-      reason: !props.gmail.connected ? "Connect Gmail in Settings to send email." : "Add an email address to send email.",
+      reason: !emailConnected ? "Connect Gmail or Outlook in Settings to send email." : "Add an email address to send email.",
     },
     {
       key: "whatsapp",
@@ -135,9 +143,9 @@ export function Timeline(props: Props) {
           {!activeTab.available ? (
             <p className="text-[13px] text-ink-muted">
               {activeTab.reason}{" "}
-              {activeTab.key === "email" && !props.gmail.connected ? (
-                <Link href="/settings/gmail" className="font-medium text-ink hover:underline">
-                  Open Gmail settings
+              {activeTab.key === "email" && !emailConnected ? (
+                <Link href="/settings/email" className="font-medium text-ink hover:underline">
+                  Open email settings
                 </Link>
               ) : activeTab.key === "whatsapp" && !props.whatsapp.configured ? (
                 <Link href="/settings/whatsapp" className="font-medium text-ink hover:underline">
@@ -156,6 +164,7 @@ export function Timeline(props: Props) {
               contactName={props.contact.displayName}
               client={client}
               emails={props.contact.emails}
+              accounts={props.email.accounts}
               threads={threads}
               selectedThreadId={selectedThreadId}
               onSelectThread={setSelectedThreadId}
