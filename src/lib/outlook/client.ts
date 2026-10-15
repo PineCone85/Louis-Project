@@ -142,19 +142,28 @@ export class GraphClient {
     return `${base}&$filter=${encodeURIComponent(`receivedDateTime ge ${stamp}`)}&$orderby=${encodeURIComponent("receivedDateTime desc")}`;
   }
 
-  /** Small pages so that a page always fits the shortest sync budget and progress is persisted often. */
-  static readonly DELTA_PAGE_SIZE = 15;
+  /**
+   * Small pages so that progress is persisted often. Messages already in the CRM are skipped without
+   * being fetched, so a page that was cut short by the time budget is cheap to resume.
+   */
+  static readonly DELTA_PAGE_SIZE = 20;
 
   async delta(url: string): Promise<DeltaPage> {
     const json = await this.request<RawPage<DeltaStub>>(url, { prefer: `odata.maxpagesize=${GraphClient.DELTA_PAGE_SIZE}` });
     return { value: json.value ?? [], nextLink: json["@odata.nextLink"], deltaLink: json["@odata.deltaLink"] };
   }
 
-  /** Plain listing used as a fallback when the delta date filter is unavailable. */
-  async listRecent(folder: MailFolder, since: Date, url?: string): Promise<{ value: DeltaStub[]; nextLink?: string }> {
+  /**
+   * Lists the messages of a folder received in [from, to), newest first. Used to import mail that
+   * pre-dates the live delta cursor; a fixed range keeps the paging stable while new mail arrives.
+   */
+  async listRange(folder: MailFolder, from: Date, to: Date, url?: string): Promise<{ value: DeltaStub[]; nextLink?: string }> {
+    const stamp = (date: Date) => date.toISOString().replace(/\.\d{3}Z$/, "Z");
     const target =
       url ??
-      `${GRAPH_BASE}/me/mailFolders/${folder}/messages?$select=id,receivedDateTime&$filter=${encodeURIComponent(`receivedDateTime ge ${since.toISOString()}`)}&$orderby=receivedDateTime%20desc&$top=50`;
+      `${GRAPH_BASE}/me/mailFolders/${folder}/messages?$select=id,receivedDateTime&$top=${GraphClient.DELTA_PAGE_SIZE}` +
+        `&$filter=${encodeURIComponent(`receivedDateTime ge ${stamp(from)} and receivedDateTime lt ${stamp(to)}`)}` +
+        `&$orderby=${encodeURIComponent("receivedDateTime desc")}`;
     const json = await this.request<RawPage<DeltaStub>>(target);
     return { value: json.value ?? [], nextLink: json["@odata.nextLink"] };
   }

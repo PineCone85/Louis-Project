@@ -354,10 +354,10 @@ export type EmailProvider = "gmail" | "outlook";
 export type EmailSyncState = {
   gmail?: { historyId?: string | null; backfillPageToken?: string | null };
   outlook?: {
-    /** Next delta or page URL to call for the inbox; null starts a fresh enumeration. */
+    /** Next live delta or page URL to call for the inbox; null starts a fresh enumeration from liveSince. */
     inboxLink?: string | null;
     sentLink?: string | null;
-    /** True once a deltaLink has been obtained, meaning the initial enumeration is complete. */
+    /** True once a deltaLink has been obtained, meaning the live cursor only returns new changes. */
     inboxReady?: boolean;
     sentReady?: boolean;
     /** Set when the initial date filter is rejected; enumeration then relies on client-side date checks. */
@@ -365,6 +365,17 @@ export type EmailSyncState = {
     subscriptionError?: string | null;
     /** Fingerprint of the secret and endpoint the current subscription was registered with. */
     subscriptionConfig?: string;
+    /**
+     * Mail received at or after this instant (ISO) is tracked by the live delta cursors (inboxLink and
+     * sentLink); older mail is imported separately by the backfill cursors. Absent on accounts that
+     * were synchronised by the earlier single-cursor scheme, which are migrated on their next sync.
+     */
+    liveSince?: string;
+    /** Next page of the one-off import of mail received before liveSince; null starts it again. */
+    inboxBackfillLink?: string | null;
+    sentBackfillLink?: string | null;
+    inboxBackfillDone?: boolean;
+    sentBackfillDone?: boolean;
   };
 };
 
