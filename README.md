@@ -10,7 +10,7 @@ Built with Next.js 16, React 19, Tailwind CSS 4, Drizzle ORM and Postgres. Desig
 - **Pipeline**: a residential buyer pipeline (Prospect, Contacted, Qualified, Property Search, Viewing, Interested, Offer Submitted, Negotiation, Offer Accepted, Closing, Completed, Lost) with a drag-and-drop board and per-client stage controls. Every stage change is logged.
 - **Properties**: manual property records with price, location, specifications, features and private notes. Link properties to clients with a status (suggested, interested, viewing scheduled, viewed, offer made, not interested, purchased), viewing dates and notes. Both directions are visible.
 - **Gmail and Outlook**: connect one or more mailboxes with OAuth: Google (Gmail or Google Workspace) and Microsoft (Microsoft 365, Exchange Online or personal Outlook.com). Incoming mail is matched to clients by email address, shown on the client timeline and in the unified inbox, and can be replied to from the CRM (replies thread correctly in the mailbox). Mail you send from the mailbox itself to known clients is imported too. Attachments open through the CRM.
-- **WhatsApp**: the official WhatsApp Business Platform (Cloud API). Incoming messages are matched to clients by mobile number; text, images, documents, audio, video, locations and contacts are supported. Reply from the CRM inside the 24-hour customer service window, or send an approved template message outside it.
+- **WhatsApp**: the official WhatsApp Business Platform (Cloud API). Agents connect their own WhatsApp Business numbers in Settings with Meta's Embedded Signup, including numbers they keep using in the WhatsApp Business app. Incoming messages are matched to clients by mobile number; text, images, documents, audio, video, locations and contacts are supported. Reply from the CRM inside the 24-hour customer service window, or send an approved template message outside it.
 - **Unified inbox and notifications**: every conversation across both channels, unread counts, an unread badge in the navigation, in-app notifications for new messages, and a dashboard list of clients who need attention. Conversations from unknown senders can be linked to an existing client or turned into a new client in one click.
 - **Automatic replies**: deterministic rules (every message, first message from a new contact, keyword match, outside business hours), scoped to clients or unknown contacts and to pipeline stages, with cooldowns and once-per-conversation protection. Replies use your own templates. Nothing is AI-generated. Automated senders, bulk mail and bounces never receive a reply.
 - **Templates**: reusable quick replies with placeholders such as `{{first_name}}` and `{{agent_name}}`.
@@ -91,7 +91,8 @@ Add these in **Settings > Environment Variables** (see `.env.example` for descri
 | `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET` | for Outlook | From the Microsoft Entra app registration |
 | `MICROSOFT_TENANT` | optional | `common` (default) or your tenant ID |
 | `MICROSOFT_WEBHOOK_SECRET` | optional | Instant Outlook notifications |
-| `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_BUSINESS_ACCOUNT_ID`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_APP_SECRET`, `WHATSAPP_VERIFY_TOKEN` | for WhatsApp | From Meta for Developers |
+| `WHATSAPP_APP_ID`, `WHATSAPP_APP_SECRET`, `WHATSAPP_CONFIG_ID`, `WHATSAPP_VERIFY_TOKEN` | for WhatsApp | From Meta for Developers; lets agents connect their own numbers in Settings > WhatsApp |
+| `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_BUSINESS_ACCOUNT_ID`, `WHATSAPP_ACCESS_TOKEN` | optional | One number configured by hand instead of (or as well as) connected numbers |
 
 Then deploy. The included `vercel.json` schedules `/api/cron/sync` once a day (the most the Hobby plan allows). On Pro you can change the schedule to `*/5 * * * *`. Any external scheduler can also call `GET {APP_URL}/api/cron/sync` with the header `Authorization: Bearer {CRON_SECRET}`.
 
@@ -131,12 +132,21 @@ Client secrets expire (two years at most). When the secret expires, mail stops s
 
 ### 5. WhatsApp (Meta WhatsApp Business Platform)
 
-1. At developers.facebook.com create a **Business** app and add the **WhatsApp** product. Meta provides a test number immediately; to use your own business number, add and verify it under WhatsApp > API Setup (a number already registered with the consumer WhatsApp app must be removed from it first).
-2. Copy the **Phone number ID** and **WhatsApp Business Account ID** from API Setup.
-3. Create a permanent access token: Business Settings > Users > **System users**, create a system user with admin access, assign the app with full control, and generate a token with the `whatsapp_business_messaging` and `whatsapp_business_management` permissions. Put it in `WHATSAPP_ACCESS_TOKEN`.
-4. Copy the app secret from App settings > Basic into `WHATSAPP_APP_SECRET`, and choose any random string for `WHATSAPP_VERIFY_TOKEN`.
-5. Deploy, then under WhatsApp > Configuration set the callback URL to `{APP_URL}/api/webhooks/whatsapp` with your verify token, and subscribe to the **messages** field.
-6. Create and submit message templates in Meta Business Manager (WhatsApp Manager > Message templates). Approved templates appear in the CRM for starting conversations outside the 24-hour window.
+Agents connect their own WhatsApp Business numbers from **Settings > WhatsApp** with Meta's Embedded Signup: a Facebook popup in which they pick or create their WhatsApp Business Account and number. Several numbers can be connected; each conversation is answered from the number the client wrote to, and the composer offers a **From** choice when there is more than one. Setting this up once, as the owner of the Meta app:
+
+1. At developers.facebook.com create a **Business** app and add the **WhatsApp** product. Complete **business verification** for your Meta Business portfolio, and apply to become a **Tech Provider** (WhatsApp > Overview), which is required before other businesses can connect their numbers to your app.
+2. Request **advanced access** to `whatsapp_business_management` and `whatsapp_business_messaging` through App Review, and switch the app to **Live** mode. In development mode only people with a role on the app can complete the signup and only test numbers send messages.
+3. Add the **Facebook Login for Business** product. Under Configurations, create a configuration from the **WhatsApp Embedded Signup** template (permissions `whatsapp_business_management` and `whatsapp_business_messaging`) and copy its **Configuration ID** into `WHATSAPP_CONFIG_ID`. Under Facebook Login for Business > Settings add the domain of `APP_URL` to **Allowed domains for the JavaScript SDK**, and add it under App settings > Basic > **App domains**.
+4. Copy the **App ID** into `WHATSAPP_APP_ID` and the **App secret** (App settings > Basic) into `WHATSAPP_APP_SECRET`. Choose any random string for `WHATSAPP_VERIFY_TOKEN`.
+5. Deploy, then under WhatsApp > Configuration set the callback URL to `{APP_URL}/api/webhooks/whatsapp` with your verify token, and subscribe to the **messages** field, plus **smb_message_echoes** if agents keep using the WhatsApp Business app on their phone. This one webhook serves every connected number.
+6. Agents open **Settings > WhatsApp** and choose either:
+   - **Connect a WhatsApp number**: the number moves to the WhatsApp Business Platform and is used only through the CRM (a number registered in a WhatsApp app must be deleted from it first). The CRM registers it for sending; if the number already has a two-step verification PIN, the agent is asked to enter it.
+   - **Use my WhatsApp Business app number** (coexistence): the number keeps working in the WhatsApp Business app on the phone, and messages sent from the phone also appear in the CRM.
+7. Templates are created and approved per WhatsApp Business Account in WhatsApp Manager > Message templates; each conversation offers the approved templates of the number it runs through.
+
+When a connection is made, the CRM exchanges the signup code for Meta's business integration token (stored encrypted, it does not expire), subscribes the app to the account's webhooks and registers the number. If messages stop arriving for a number, **Repair incoming messages** in Settings renews that subscription.
+
+The earlier single-number setup still works: set `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_BUSINESS_ACCOUNT_ID` and a permanent system user `WHATSAPP_ACCESS_TOKEN` (Business Settings > Users > System users, with both WhatsApp permissions), and that number is used alongside any connected ones.
 
 WhatsApp rules to keep in mind: you can send free-form messages only within 24 hours of the customer's last message; outside that window the CRM offers your approved templates. Conversations started by customers are free on the platform; template messages may be billed by Meta.
 

@@ -14,6 +14,8 @@ export function verifyWhatsAppSignature(rawBody: string, signatureHeader: string
 
 export type InboundWhatsAppMessage = {
   id: string;
+  /** The business number the message was sent to. */
+  phoneNumberId: string | null;
   from: string;
   profileName: string | null;
   timestamp: Date;
@@ -21,6 +23,20 @@ export type InboundWhatsAppMessage = {
   text: string | null;
   media: WhatsAppMedia | null;
   contextMessageId: string | null;
+};
+
+/**
+ * A message the agent sent from the WhatsApp Business app on their phone, for numbers connected with
+ * coexistence. Meta mirrors these to the webhook (field smb_message_echoes) so the CRM timeline stays complete.
+ */
+export type WhatsAppEcho = {
+  id: string;
+  phoneNumberId: string | null;
+  to: string;
+  timestamp: Date;
+  type: string;
+  text: string | null;
+  media: WhatsAppMedia | null;
 };
 
 export type WhatsAppStatusUpdate = {
@@ -34,6 +50,7 @@ export type WhatsAppStatusUpdate = {
 type RawMessage = {
   id: string;
   from: string;
+  to?: string;
   timestamp: string;
   type: string;
   text?: { body: string };
@@ -62,6 +79,7 @@ type WebhookPayload = {
         metadata?: { phone_number_id?: string; display_phone_number?: string };
         contacts?: Array<{ wa_id: string; profile?: { name?: string } }>;
         messages?: RawMessage[];
+        message_echoes?: RawMessage[];
         statuses?: Array<{
           id: string;
           status: string;
@@ -128,25 +146,29 @@ function describe(message: RawMessage): { text: string | null; media: WhatsAppMe
 
 export function parseWhatsAppWebhook(payload: unknown): {
   messages: InboundWhatsAppMessage[];
+  echoes: WhatsAppEcho[];
   statuses: WhatsAppStatusUpdate[];
   phoneNumberIds: string[];
 } {
   const body = (payload ?? {}) as WebhookPayload;
   const messages: InboundWhatsAppMessage[] = [];
+  const echoes: WhatsAppEcho[] = [];
   const statuses: WhatsAppStatusUpdate[] = [];
   const phoneNumberIds: string[] = [];
-  if (body.object !== "whatsapp_business_account") return { messages, statuses, phoneNumberIds };
+  if (body.object !== "whatsapp_business_account") return { messages, echoes, statuses, phoneNumberIds };
 
   for (const entry of body.entry ?? []) {
     for (const change of entry.changes ?? []) {
       const value = change.value;
       if (!value || value.messaging_product !== "whatsapp") continue;
-      if (value.metadata?.phone_number_id) phoneNumberIds.push(value.metadata.phone_number_id);
+      const phoneNumberId = value.metadata?.phone_number_id ?? null;
+      if (phoneNumberId) phoneNumberIds.push(phoneNumberId);
       const names = new Map((value.contacts ?? []).map((c) => [c.wa_id, c.profile?.name ?? null]));
       for (const raw of value.messages ?? []) {
         const { text, media } = describe(raw);
         messages.push({
           id: raw.id,
+          phoneNumberId,
           from: raw.from,
           profileName: names.get(raw.from) ?? null,
           timestamp: new Date(Number(raw.timestamp) * 1000),
@@ -155,6 +177,11 @@ export function parseWhatsAppWebhook(payload: unknown): {
           media,
           contextMessageId: raw.context?.id ?? null,
         });
+      }
+      for (const raw of value.message_echoes ?? []) {
+        if (!raw.to) continue;
+        const { text, media } = describe(raw);
+        echoes.push({ id: raw.id, phoneNumberId, to: raw.to, timestamp: new Date(Number(raw.timestamp) * 1000), type: raw.type, text, media });
       }
       for (const status of value.statuses ?? []) {
         const err = status.errors?.[0];
@@ -168,5 +195,5 @@ export function parseWhatsAppWebhook(payload: unknown): {
       }
     }
   }
-  return { messages, statuses, phoneNumberIds };
+  return { messages, echoes, statuses, phoneNumberIds };
 }

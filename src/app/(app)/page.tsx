@@ -7,6 +7,7 @@ import { countPendingDrafts } from "@/lib/queries/drafts";
 import { getSettings, stagesFrom } from "@/lib/queries/settings";
 import { listEmailAccounts } from "@/lib/email/accounts";
 import { env } from "@/lib/env";
+import { whatsAppAvailable } from "@/lib/whatsapp/accounts";
 import { formatDate, formatRelative, formatSmartDate, fullName } from "@/lib/format";
 import { SyncButton } from "@/components/dashboard/sync-button";
 import { Avatar, EmptyState, PageBody, PageHeader, Panel, StageChip } from "@/components/ui/primitives";
@@ -30,20 +31,21 @@ function Stat({ label, value, href }: { label: string; value: number | string; h
 }
 
 export default async function DashboardPage() {
-  const [data, stageCounts, propertyCounts, settings, emailAccounts, pendingDrafts] = await Promise.all([
+  const [data, stageCounts, propertyCounts, settings, emailAccounts, pendingDrafts, whatsappReady] = await Promise.all([
     getDashboardData(),
     countClientsByStage(),
     countProperties(),
     getSettings(),
     listEmailAccounts(),
     countPendingDrafts(),
+    whatsAppAvailable(),
   ]);
   const stages = stagesFrom(settings);
   const today = new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long", timeZone: settings.timezone }).format(new Date());
   const attentionCount = data.attentionCount;
   const setupItems = [
     emailAccounts.length === 0 && !env.demo && { label: "Connect Gmail or Outlook to see client email in the CRM", href: "/settings/email" },
-    !env.whatsapp.configured && !env.demo && { label: "Configure WhatsApp Business to receive WhatsApp messages", href: "/settings/whatsapp" },
+    !whatsappReady && !env.demo && { label: "Connect your WhatsApp Business number to receive WhatsApp messages", href: "/settings/whatsapp" },
     !settings.agentName && { label: "Add your name and signature for outgoing messages", href: "/settings" },
   ].filter((item): item is { label: string; href: string } => Boolean(item));
 

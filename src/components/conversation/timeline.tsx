@@ -8,6 +8,7 @@ import type { RenderContext } from "@/lib/auto-reply/render";
 import type { Activity, Message, Template } from "@/lib/db/schema";
 import type { EmailAccountOption } from "@/lib/email/types";
 import { formatDateTime } from "@/lib/format";
+import type { WhatsAppSenderOption } from "@/lib/whatsapp/accounts";
 import type { WhatsAppWindow } from "@/lib/whatsapp/send";
 import { ConfirmButton } from "@/components/ui/form-controls";
 import { EmptyState, cx } from "@/components/ui/primitives";
@@ -33,7 +34,7 @@ type Props = {
   renderContext: RenderContext["settings"];
   /** Connected mailboxes the agent can send from. In demo mode sending is simulated. */
   email: { accounts: EmailAccountOption[]; demo: boolean };
-  whatsapp: { configured: boolean; window: WhatsAppWindow | null };
+  whatsapp: { configured: boolean; window: WhatsAppWindow | null; senders: WhatsAppSenderOption[]; defaultSender: string | null };
   /** Whether AI reply drafting is available (ANTHROPIC_API_KEY set). */
   ai?: { configured: boolean };
   templates: Template[];
@@ -182,6 +183,8 @@ export function Timeline(props: Props) {
               client={client}
               phones={props.contact.phones}
               window={props.whatsapp.window}
+              senders={props.whatsapp.senders}
+              defaultSender={props.whatsapp.defaultSender}
               timezone={props.timezone}
               templates={props.templates.filter((t) => t.channel === "any" || t.channel === "whatsapp")}
               renderContext={props.renderContext}

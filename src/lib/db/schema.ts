@@ -133,6 +133,12 @@ export const messages = pgTable(
     clientId: uuid("client_id").references(() => clients.id, { onDelete: "set null" }),
     /** The connected mailbox an email belongs to. Null for WhatsApp and for legacy rows. */
     accountId: uuid("account_id").references(() => emailAccounts.id, { onDelete: "set null" }),
+    /**
+     * WhatsApp: the business number (Meta phone number id) the conversation runs through, so replies
+     * go out from the number the contact wrote to. Null for email and for rows from before numbers
+     * could be connected in the app.
+     */
+    waPhoneNumberId: text("wa_phone_number_id"),
     contactName: text("contact_name"),
     contactAddress: text("contact_address").notNull(),
     externalId: text("external_id"),
@@ -354,10 +360,10 @@ export type EmailProvider = "gmail" | "outlook";
 export type EmailSyncState = {
   gmail?: { historyId?: string | null; backfillPageToken?: string | null };
   outlook?: {
-    /** Next delta or page URL to call for the inbox; null starts a fresh enumeration. */
+    /** Next live delta or page URL to call for the inbox; null starts a fresh enumeration from liveSince. */
     inboxLink?: string | null;
     sentLink?: string | null;
-    /** True once a deltaLink has been obtained, meaning the initial enumeration is complete. */
+    /** True once a deltaLink has been obtained, meaning the live cursor only returns new changes. */
     inboxReady?: boolean;
     sentReady?: boolean;
     /** Set when the initial date filter is rejected; enumeration then relies on client-side date checks. */
@@ -365,6 +371,17 @@ export type EmailSyncState = {
     subscriptionError?: string | null;
     /** Fingerprint of the secret and endpoint the current subscription was registered with. */
     subscriptionConfig?: string;
+    /**
+     * Mail received at or after this instant (ISO) is tracked by the live delta cursors (inboxLink and
+     * sentLink); older mail is imported separately by the backfill cursors. Absent on accounts that
+     * were synchronised by the earlier single-cursor scheme, which are migrated on their next sync.
+     */
+    liveSince?: string;
+    /** Next page of the one-off import of mail received before liveSince; null starts it again. */
+    inboxBackfillLink?: string | null;
+    sentBackfillLink?: string | null;
+    inboxBackfillDone?: boolean;
+    sentBackfillDone?: boolean;
   };
 };
 
@@ -395,6 +412,32 @@ export const emailAccounts = pgTable(
   (t) => [uniqueIndex("email_accounts_provider_address_idx").on(t.provider, t.emailAddress)],
 );
 
+/**
+ * WhatsApp business numbers connected in the app through Meta's Embedded Signup. Each holds the
+ * business integration token Meta issues for the customer's WhatsApp Business Account.
+ */
+export const whatsappAccounts = pgTable(
+  "whatsapp_accounts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    phoneNumberId: text("phone_number_id").notNull(),
+    wabaId: text("waba_id").notNull(),
+    displayPhoneNumber: text("display_phone_number"),
+    verifiedName: text("verified_name"),
+    accessTokenEnc: text("access_token_enc").notNull(),
+    /** Two-step verification PIN set when the number was registered for the Cloud API. */
+    pinEnc: text("pin_enc"),
+    /** True when the number stays in use in the WhatsApp Business app on the agent's phone (coexistence). */
+    coexistence: boolean("coexistence").notNull().default(false),
+    registeredAt: timestamp("registered_at", { withTimezone: true }),
+    lastError: text("last_error"),
+    lastErrorAt: timestamp("last_error_at", { withTimezone: true }),
+    connectedAt: timestamp("connected_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("whatsapp_accounts_phone_number_idx").on(t.phoneNumberId)],
+);
+
 export const loginAttempts = pgTable("login_attempts", {
   key: text("key").primaryKey(),
   failedCount: integer("failed_count").notNull().default(0),
@@ -419,3 +462,4 @@ export type Workflow = typeof workflows.$inferSelect;
 export type NewWorkflow = typeof workflows.$inferInsert;
 export type WorkflowRun = typeof workflowRuns.$inferSelect;
 export type MessageDraft = typeof messageDrafts.$inferSelect;
+export type WhatsAppAccount = typeof whatsappAccounts.$inferSelect;

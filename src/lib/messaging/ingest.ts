@@ -6,6 +6,7 @@ import type { ParsedEmail } from "@/lib/email/types";
 import { sanitizeEmailHtml } from "@/lib/sanitize";
 import { truncate } from "@/lib/format";
 import { waIdToPhone } from "@/lib/phone";
+import type { WhatsAppEcho } from "@/lib/whatsapp/webhook";
 import { evaluateAutoReply } from "@/lib/auto-reply/engine";
 import { dispatchWorkflowEvent } from "@/lib/workflows/engine";
 import { findClientByEmail, findClientByPhone } from "./matching";
@@ -175,6 +176,8 @@ export async function ingestEmail(input: IngestEmailInput): Promise<IngestResult
 
 export type IngestWhatsAppInput = {
   waMessageId: string;
+  /** The business number the message was sent to. */
+  waPhoneNumberId: string | null;
   fromWaId: string;
   profileName: string | null;
   timestamp: Date;
@@ -199,6 +202,7 @@ export async function ingestWhatsApp(input: IngestWhatsAppInput): Promise<Ingest
       contactName: input.profileName,
       contactAddress: phone,
       externalId: input.waMessageId,
+      waPhoneNumberId: input.waPhoneNumberId,
       threadId: null,
       subject: null,
       snippet: truncate(body, 200) || null,
@@ -242,6 +246,38 @@ export async function ingestWhatsApp(input: IngestWhatsAppInput): Promise<Ingest
     extra: { is_new_contact: isNewContact, safe_to_reply: input.type !== "reaction" },
   });
 
+  return { message: inserted, created: true, client };
+}
+
+/**
+ * Records a message the agent sent from the WhatsApp Business app on their phone (coexistence), so the
+ * timeline shows both sides of the conversation. No automations run for these.
+ */
+export async function ingestWhatsAppEcho(input: WhatsAppEcho): Promise<IngestResult> {
+  const phone = waIdToPhone(input.to);
+  const client = await findClientByPhone(phone);
+  const body = input.text ?? "";
+  const [inserted] = await db
+    .insert(messages)
+    .values({
+      channel: "whatsapp",
+      direction: "outbound",
+      clientId: client?.id ?? null,
+      contactAddress: phone,
+      externalId: input.id,
+      waPhoneNumberId: input.phoneNumberId,
+      snippet: truncate(body, 200) || null,
+      bodyText: body,
+      mediaType: input.type,
+      media: input.media,
+      status: "sent",
+      readAt: new Date(),
+      sentAt: input.timestamp,
+    })
+    .onConflictDoNothing({ target: [messages.channel, messages.externalId] })
+    .returning();
+  if (!inserted) return { message: null, created: false, client };
+  if (client) await touchClient(client, "outbound", input.timestamp);
   return { message: inserted, created: true, client };
 }
 

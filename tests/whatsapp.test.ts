@@ -48,15 +48,39 @@ describe("parseWhatsAppWebhook", () => {
     const parsed = parseWhatsAppWebhook(payload);
     expect(parsed.phoneNumberIds).toEqual(["123"]);
     expect(parsed.messages).toHaveLength(3);
-    expect(parsed.messages[0]).toMatchObject({ id: "wamid.1", from: "27821234567", profileName: "Jane", type: "text", text: "Hello", media: null });
+    expect(parsed.messages[0]).toMatchObject({ id: "wamid.1", phoneNumberId: "123", from: "27821234567", profileName: "Jane", type: "text", text: "Hello", media: null });
     expect(parsed.messages[1].media).toMatchObject({ id: "media1", mimeType: "image/jpeg", caption: "Front" });
     expect(parsed.messages[2].text).toContain("Cape Town");
     expect(parsed.messages[0].timestamp.getTime()).toBe(1700000000000);
     expect(parsed.statuses[0]).toMatchObject({ id: "wamid.out", status: "delivered", recipientId: "27821234567", error: null });
   });
 
+  it("parses messages sent from the WhatsApp Business app (coexistence echoes)", () => {
+    const parsed = parseWhatsAppWebhook({
+      object: "whatsapp_business_account",
+      entry: [
+        {
+          changes: [
+            {
+              field: "smb_message_echoes",
+              value: {
+                messaging_product: "whatsapp",
+                metadata: { phone_number_id: "456", display_phone_number: "27215550000" },
+                message_echoes: [{ id: "wamid.echo", from: "27215550000", to: "27821234567", timestamp: "1700000100", type: "text", text: { body: "On my way" } }],
+              },
+            },
+          ],
+        },
+      ],
+    });
+    expect(parsed.messages).toHaveLength(0);
+    expect(parsed.echoes).toEqual([
+      { id: "wamid.echo", phoneNumberId: "456", to: "27821234567", timestamp: new Date(1700000100000), type: "text", text: "On my way", media: null },
+    ]);
+  });
+
   it("ignores unrelated payloads", () => {
-    expect(parseWhatsAppWebhook({ object: "page" })).toEqual({ messages: [], statuses: [], phoneNumberIds: [] });
-    expect(parseWhatsAppWebhook(null)).toEqual({ messages: [], statuses: [], phoneNumberIds: [] });
+    expect(parseWhatsAppWebhook({ object: "page" })).toEqual({ messages: [], echoes: [], statuses: [], phoneNumberIds: [] });
+    expect(parseWhatsAppWebhook(null)).toEqual({ messages: [], echoes: [], statuses: [], phoneNumberIds: [] });
   });
 });

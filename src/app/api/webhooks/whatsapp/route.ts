@@ -5,8 +5,9 @@ import { db } from "@/lib/db";
 import { messages } from "@/lib/db/schema";
 import { safeEqual } from "@/lib/crypto";
 import { env } from "@/lib/env";
-import { ingestWhatsApp } from "@/lib/messaging/ingest";
+import { ingestWhatsApp, ingestWhatsAppEcho } from "@/lib/messaging/ingest";
 import { getSettings } from "@/lib/queries/settings";
+import { credentialsForNumber } from "@/lib/whatsapp/accounts";
 import { parseWhatsAppWebhook, verifyWhatsAppSignature } from "@/lib/whatsapp/webhook";
 
 export const maxDuration = 60;
@@ -38,17 +39,22 @@ export async function POST(request: NextRequest) {
   }
 
   const parsed = parseWhatsAppWebhook(payload);
-  const ourNumber = env.whatsapp.phoneNumberId;
-  if (ourNumber && parsed.phoneNumberIds.length > 0 && !parsed.phoneNumberIds.includes(ourNumber)) {
-    return NextResponse.json({ ok: true, ignored: true });
-  }
 
   after(async () => {
     try {
       const settings = await getSettings();
+      // One Meta app serves every connected number: only accept numbers that are connected here.
+      const ours = new Map<string, boolean>();
+      const isOurs = async (phoneNumberId: string | null) => {
+        if (!phoneNumberId) return false;
+        if (!ours.has(phoneNumberId)) ours.set(phoneNumberId, Boolean(await credentialsForNumber(phoneNumberId)));
+        return ours.get(phoneNumberId)!;
+      };
       for (const message of parsed.messages) {
+        if (!(await isOurs(message.phoneNumberId))) continue;
         await ingestWhatsApp({
           waMessageId: message.id,
+          waPhoneNumberId: message.phoneNumberId,
           fromWaId: message.from,
           profileName: message.profileName,
           timestamp: message.timestamp,
@@ -57,6 +63,10 @@ export async function POST(request: NextRequest) {
           media: message.media,
           settings,
         });
+      }
+      for (const echo of parsed.echoes) {
+        if (!(await isOurs(echo.phoneNumberId))) continue;
+        await ingestWhatsAppEcho(echo);
       }
       for (const status of parsed.statuses) {
         const rank: Record<string, number> = { sent: 1, delivered: 2, read: 3, failed: 4 };

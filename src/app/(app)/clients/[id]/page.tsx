@@ -14,6 +14,7 @@ import { markNotificationsReadForClient } from "@/lib/queries/notifications";
 import { listPropertiesBrief } from "@/lib/queries/properties";
 import { getSettings } from "@/lib/queries/settings";
 import { listTemplates } from "@/lib/queries/templates";
+import { whatsAppAvailable, whatsAppSenderOptions } from "@/lib/whatsapp/accounts";
 import { getWhatsAppWindow } from "@/lib/whatsapp/send";
 import { ActivityForm } from "@/components/clients/activity-form";
 import { FollowUpForm } from "@/components/clients/follow-up-form";
@@ -43,6 +44,7 @@ export default async function ClientPage({ params }: { params: Promise<{ id: str
   const phones = [client.phone, client.alternatePhone].filter((v): v is string => Boolean(v));
   const emails = [client.email, client.alternateEmail].filter((v): v is string => Boolean(v));
   const whatsappWindow = phones.length > 0 ? await getWhatsAppWindow(phones[0]) : null;
+  const [whatsappSenders, whatsappReady] = await Promise.all([whatsAppSenderOptions(phones[0] ?? null), whatsAppAvailable()]);
   const followUpOverdue = client.nextFollowUpAt ? isPast(client.nextFollowUpAt) : false;
   const archiveAction = archiveClientAction.bind(null, client.id, !client.archivedAt);
   const deleteAction = deleteClientAction.bind(null, client.id);
@@ -90,7 +92,7 @@ export default async function ClientPage({ params }: { params: Promise<{ id: str
               emailSignature={settings.emailSignature}
               renderContext={{ agentName: settings.agentName, agencyName: settings.agencyName, agentPhone: settings.agentPhone }}
               email={{ accounts: emailAccounts.map((a) => ({ id: a.id, provider: a.provider, emailAddress: a.emailAddress })), demo: env.demo }}
-              whatsapp={{ configured: env.whatsapp.configured || env.demo, window: whatsappWindow }}
+              whatsapp={{ configured: whatsappReady || env.demo, window: whatsappWindow, ...whatsappSenders }}
               ai={{ configured: env.anthropic.configured }}
               templates={templates}
             />
