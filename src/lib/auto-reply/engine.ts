@@ -124,6 +124,8 @@ export async function evaluateAutoReply(ctx: AutoReplyContext): Promise<void> {
           contactName: ctx.message.contactName,
           isAutoReply: true,
           autoReplyRuleId: rule.id,
+          // Answer from the number the contact wrote to.
+          phoneNumberId: ctx.message.waPhoneNumberId,
         });
         sentMessageId = sent.id;
       }

@@ -6,6 +6,7 @@ import { countUnreadInbound } from "@/lib/queries/messages";
 import { countUnreadNotifications } from "@/lib/queries/notifications";
 import { countPendingDrafts } from "@/lib/queries/drafts";
 import { getSettings, stagesFrom } from "@/lib/queries/settings";
+import { whatsAppAvailable } from "@/lib/whatsapp/accounts";
 import { StagesProvider } from "@/components/pipeline/stages-provider";
 import { NotificationsProvider } from "@/components/shell/notifications-provider";
 import { Sidebar } from "@/components/shell/sidebar";
@@ -14,12 +15,13 @@ export const dynamic = "force-dynamic";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   await requireSession();
-  const [settings, unreadNotifications, unreadMessages, emailAccounts, pendingDrafts] = await Promise.all([
+  const [settings, unreadNotifications, unreadMessages, emailAccounts, pendingDrafts, whatsappReady] = await Promise.all([
     getSettings(),
     countUnreadNotifications(),
     countUnreadInbound(),
     listEmailAccounts(),
     countPendingDrafts(),
+    whatsAppAvailable(),
   ]);
 
   return (
@@ -34,7 +36,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             accounts: emailAccounts.map((a) => ({ id: a.id, provider: a.provider, emailAddress: a.emailAddress, error: a.lastSyncError })),
             demo: env.demo,
           }}
-          whatsapp={{ configured: env.whatsapp.configured || env.demo }}
+          whatsapp={{ configured: whatsappReady || env.demo }}
           signOut={logoutAction}
         />
         <main className="min-w-0 flex-1">{children}</main>

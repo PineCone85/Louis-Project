@@ -8,6 +8,7 @@ import { getConversationMessages, listConversations, markConversationRead } from
 import { markNotificationsReadForMessages } from "@/lib/queries/notifications";
 import { getSettings } from "@/lib/queries/settings";
 import { listTemplates } from "@/lib/queries/templates";
+import { whatsAppAvailable, whatsAppSenderOptions } from "@/lib/whatsapp/accounts";
 import { getWhatsAppWindow } from "@/lib/whatsapp/send";
 import { RefreshCounts } from "@/components/clients/refresh-counts";
 import { Timeline } from "@/components/conversation/timeline";
@@ -24,11 +25,12 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
   const unreadOnly = params.filter === "unread";
   const channel = params.channel === "email" || params.channel === "whatsapp" ? params.channel : undefined;
   const clientsOnly = params.who === "clients";
-  const [conversations, settings, emailAccounts, templates] = await Promise.all([
+  const [conversations, settings, emailAccounts, templates, whatsappReady] = await Promise.all([
     listConversations({ unreadOnly, channel, clientsOnly }),
     getSettings(),
     listEmailAccounts(),
     listTemplates(),
+    whatsAppAvailable(),
   ]);
   const emailOptions = emailAccounts.map((a) => ({ id: a.id, provider: a.provider, emailAddress: a.emailAddress }));
 
@@ -50,6 +52,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
 
   let selectedMessages: Awaited<ReturnType<typeof getConversationMessages>> = [];
   let whatsappWindow = null;
+  let whatsappSenders: Awaited<ReturnType<typeof whatsAppSenderOptions>> = { senders: [], defaultSender: null };
   let clients: Awaited<ReturnType<typeof listClientsBrief>> = [];
   if (selected) {
     selectedMessages = await getConversationMessages(selected.channel, selected.contactAddress);
@@ -58,7 +61,10 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
       await markConversationRead(selected.channel, selected.contactAddress);
       await markNotificationsReadForMessages(unreadIds);
     }
-    if (selected.channel === "whatsapp") whatsappWindow = await getWhatsAppWindow(selected.contactAddress);
+    if (selected.channel === "whatsapp") {
+      whatsappWindow = await getWhatsAppWindow(selected.contactAddress);
+      whatsappSenders = await whatsAppSenderOptions(selected.contactAddress);
+    }
     if (!selected.clientId) clients = await listClientsBrief();
   }
 
@@ -109,7 +115,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
                 description={
                   clientsOnly
                     ? "Only conversations linked to a client are shown. Switch to Everyone to see all contacts."
-                    : emailAccounts.length > 0 || env.whatsapp.configured
+                    : emailAccounts.length > 0 || whatsappReady
                     ? "Messages from clients will appear here as they arrive."
                     : "Connect Gmail or Outlook, or configure WhatsApp, in Settings to start receiving client messages."
                 }
@@ -190,7 +196,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
                   emailSignature={settings.emailSignature}
                   renderContext={{ agentName: settings.agentName, agencyName: settings.agencyName, agentPhone: settings.agentPhone }}
                   email={{ accounts: emailOptions, demo: env.demo }}
-                  whatsapp={{ configured: env.whatsapp.configured || env.demo, window: whatsappWindow }}
+                  whatsapp={{ configured: whatsappReady || env.demo, window: whatsappWindow, ...whatsappSenders }}
                   ai={{ configured: env.anthropic.configured }}
                   templates={templates}
                   defaultChannel={selected.channel}

@@ -6,6 +6,7 @@ import { env } from "@/lib/env";
 import { truncate } from "@/lib/format";
 import { logActivity } from "@/lib/messaging/activity";
 import { phoneToWaId } from "@/lib/phone";
+import { requireCredentialsForContact } from "./accounts";
 import { sendTemplateMessage, sendTextMessage, type TemplateComponent } from "./client";
 
 export const WHATSAPP_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -33,6 +34,8 @@ type StoreInput = {
   isAutoReply: boolean;
   autoReplyRuleId: string | null;
   mediaType: string;
+  /** The business number the message went out from; null in demo mode. */
+  waPhoneNumberId: string | null;
 };
 
 async function storeOutbound(input: StoreInput): Promise<Message> {
@@ -49,6 +52,7 @@ async function storeOutbound(input: StoreInput): Promise<Message> {
       snippet: truncate(input.text, 200),
       bodyText: input.text,
       mediaType: input.mediaType,
+      waPhoneNumberId: input.waPhoneNumberId,
       status: "sent",
       isAutoReply: input.isAutoReply,
       autoReplyRuleId: input.autoReplyRuleId,
@@ -85,12 +89,16 @@ export async function sendWhatsAppText(input: {
   contactName?: string | null;
   isAutoReply?: boolean;
   autoReplyRuleId?: string | null;
+  /** Send from this business number; by default the number the contact last wrote to. */
+  phoneNumberId?: string | null;
 }): Promise<Message> {
   const text = input.text.trim();
   if (!text) throw new Error("Message text is required.");
   // In demo mode the message is recorded as sent without calling Meta.
-  const { messageId } = env.demo ? { messageId: `demo-${randomUUID()}` } : await sendTextMessage(phoneToWaId(input.toPhone), text);
+  const credentials = env.demo ? null : await requireCredentialsForContact(input.toPhone, input.phoneNumberId);
+  const { messageId } = credentials ? await sendTextMessage(credentials, phoneToWaId(input.toPhone), text) : { messageId: `demo-${randomUUID()}` };
   return storeOutbound({
+    waPhoneNumberId: credentials?.phoneNumberId ?? null,
     phone: input.toPhone,
     externalId: messageId,
     text,
@@ -111,6 +119,7 @@ export async function sendWhatsAppTemplate(input: {
   preview: string;
   clientId?: string | null;
   contactName?: string | null;
+  phoneNumberId?: string | null;
 }): Promise<Message> {
   const components: TemplateComponent[] = [];
   if (input.headerParams.length > 0) {
@@ -119,10 +128,12 @@ export async function sendWhatsAppTemplate(input: {
   if (input.bodyParams.length > 0) {
     components.push({ type: "body", parameters: input.bodyParams.map((text) => ({ type: "text", text })) });
   }
-  const { messageId } = env.demo
-    ? { messageId: `demo-${randomUUID()}` }
-    : await sendTemplateMessage(phoneToWaId(input.toPhone), { name: input.templateName, language: input.language, components });
+  const credentials = env.demo ? null : await requireCredentialsForContact(input.toPhone, input.phoneNumberId);
+  const { messageId } = credentials
+    ? await sendTemplateMessage(credentials, phoneToWaId(input.toPhone), { name: input.templateName, language: input.language, components })
+    : { messageId: `demo-${randomUUID()}` };
   return storeOutbound({
+    waPhoneNumberId: credentials?.phoneNumberId ?? null,
     phone: input.toPhone,
     externalId: messageId,
     text: input.preview,

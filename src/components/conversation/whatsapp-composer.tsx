@@ -7,6 +7,7 @@ import type { Template } from "@/lib/db/schema";
 import { formatDateTime } from "@/lib/format";
 import { formatPhone } from "@/lib/phone";
 import type { ActionResult } from "@/lib/validation";
+import type { WhatsAppSenderOption } from "@/lib/whatsapp/accounts";
 import type { WhatsAppWindow } from "@/lib/whatsapp/send";
 import { SubmitButton } from "@/components/ui/form-controls";
 import { DraftButton } from "./draft-button";
@@ -18,6 +19,9 @@ type Props = {
   client: { firstName: string; lastName: string } | null;
   phones: string[];
   window: WhatsAppWindow | null;
+  /** Business numbers the agent can send from, and the number this conversation uses. */
+  senders: WhatsAppSenderOption[];
+  defaultSender: string | null;
   timezone: string;
   templates: Template[];
   renderContext: RenderContext["settings"];
@@ -38,7 +42,19 @@ function fill(text: string | undefined, params: string[]): string {
   return (text ?? "").replace(/\{\{(\d+)\}\}/g, (_, n: string) => params[Number(n) - 1] || `{{${n}}}`);
 }
 
-function TemplateSender({ phone, clientId, contactName, onSent }: { phone: string; clientId: string | null; contactName: string | null; onSent: () => void }) {
+function TemplateSender({
+  phone,
+  from,
+  clientId,
+  contactName,
+  onSent,
+}: {
+  phone: string;
+  from: string;
+  clientId: string | null;
+  contactName: string | null;
+  onSent: () => void;
+}) {
   const [state, action] = useActionState<ActionResult, FormData>(
     async (previous, formData) => {
       const result = await sendWhatsAppTemplateAction(previous, formData);
@@ -55,7 +71,8 @@ function TemplateSender({ phone, clientId, contactName, onSent }: { phone: strin
 
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/whatsapp/templates", { cache: "no-store" })
+    const query = new URLSearchParams({ phone, ...(from ? { from } : {}) });
+    fetch(`/api/whatsapp/templates?${query.toString()}`, { cache: "no-store" })
       .then(async (response) => {
         const data = (await response.json()) as { templates: ApprovedTemplate[]; error?: string };
         if (cancelled) return;
@@ -68,7 +85,7 @@ function TemplateSender({ phone, clientId, contactName, onSent }: { phone: strin
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [phone, from]);
 
   const template = templates?.find((t) => t.id === selected) ?? null;
   const preview = useMemo(() => {
@@ -87,6 +104,7 @@ function TemplateSender({ phone, clientId, contactName, onSent }: { phone: strin
   return (
     <form action={action} className="space-y-3">
       <input type="hidden" name="phone" value={phone} />
+      {from ? <input type="hidden" name="fromNumber" value={from} /> : null}
       {clientId ? <input type="hidden" name="clientId" value={clientId} /> : null}
       <input type="hidden" name="contactName" value={contactName ?? ""} />
       <input type="hidden" name="templateName" value={template?.name ?? ""} />
@@ -160,6 +178,7 @@ export function WhatsAppComposer(props: Props) {
     { ok: true },
   );
   const [phone, setPhone] = useState(props.phones[0] ?? "");
+  const [from, setFrom] = useState(props.defaultSender ?? "");
   const [templateId, setTemplateId] = useState("");
   const [showTemplate, setShowTemplate] = useState(false);
   const errors = (!state.ok && state.fieldErrors) || {};
@@ -182,13 +201,29 @@ export function WhatsAppComposer(props: Props) {
       ? `Their last message was ${formatDateTime(props.window.lastInboundAt, props.timezone)}. WhatsApp only allows free-form replies within 24 hours, so send an approved template to reopen the conversation.`
       : "This contact has not messaged you on WhatsApp yet. WhatsApp requires an approved template message to start a conversation.";
 
+  const senderPicker =
+    props.senders.length > 1 ? (
+      <label className="flex items-center gap-2 text-[12px] text-ink-muted">
+        From
+        <select className="select h-7 w-64 text-[12px]" value={from} onChange={(e) => setFrom(e.target.value)} aria-label="Send from WhatsApp number">
+          {props.senders.map((s) => (
+            <option key={s.phoneNumberId} value={s.phoneNumberId}>
+              {s.label}
+            </option>
+          ))}
+        </select>
+      </label>
+    ) : null;
+
   return (
     <div className="space-y-3">
+      {senderPicker}
       <p className={cx("rounded-sm border px-3 py-2 text-[12px]", windowOpen ? "border-sage-200 bg-sage-50 text-sage-900" : "border-line bg-canvas text-ink-muted")}>{notice}</p>
       {windowOpen && !showTemplate ? (
         <form action={action} className="space-y-3">
           {props.clientId ? <input type="hidden" name="clientId" value={props.clientId} /> : null}
           <input type="hidden" name="contactName" value={props.contactName ?? ""} />
+          {from ? <input type="hidden" name="fromNumber" value={from} /> : null}
           <div className="flex flex-wrap items-center justify-between gap-2">
             {props.phones.length > 1 ? (
               <select name="phone" className="select w-52" value={phone} onChange={(e) => setPhone(e.target.value)} aria-label="Phone number">
@@ -228,7 +263,7 @@ export function WhatsAppComposer(props: Props) {
         </form>
       ) : (
         <>
-          <TemplateSender phone={phone} clientId={props.clientId} contactName={props.contactName} onSent={props.onSent} />
+          <TemplateSender key={`${phone}|${from}`} phone={phone} from={from} clientId={props.clientId} contactName={props.contactName} onSent={props.onSent} />
           {windowOpen ? (
             <button type="button" className="text-[12px] font-medium text-ink-muted hover:text-ink" onClick={() => setShowTemplate(false)}>
               Back to free-form message

@@ -1,4 +1,5 @@
 import { env } from "@/lib/env";
+import type { WhatsAppCredentials } from "./accounts";
 
 export class WhatsAppApiError extends Error {
   code: number | undefined;
@@ -17,35 +18,16 @@ export class WhatsAppApiError extends Error {
   }
 }
 
-function graphUrl(path: string): string {
+export function graphUrl(path: string): string {
   return `https://graph.facebook.com/${env.whatsapp.apiVersion}/${path}`;
 }
 
-function accessToken(): string {
-  const token = env.whatsapp.accessToken;
-  if (!token) throw new WhatsAppApiError("WhatsApp is not configured. Add the WhatsApp environment variables.");
-  return token;
-}
+type GraphErrorBody = {
+  error?: { message?: string; code?: number; error_subcode?: number; error_data?: { details?: string }; error_user_msg?: string };
+};
 
-function phoneNumberId(): string {
-  const id = env.whatsapp.phoneNumberId;
-  if (!id) throw new WhatsAppApiError("WHATSAPP_PHONE_NUMBER_ID is not configured.");
-  return id;
-}
-
-async function graphRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const response = await fetch(graphUrl(path), {
-    ...init,
-    headers: {
-      Authorization: `Bearer ${accessToken()}`,
-      ...(init.body ? { "Content-Type": "application/json" } : {}),
-      ...(init.headers ?? {}),
-    },
-    cache: "no-store",
-  });
-  const json = (await response.json().catch(() => ({}))) as T & {
-    error?: { message?: string; code?: number; error_subcode?: number; error_data?: { details?: string }; error_user_msg?: string };
-  };
+export async function parseGraphResponse<T>(response: Response): Promise<T> {
+  const json = (await response.json().catch(() => ({}))) as T & GraphErrorBody;
   if (!response.ok || json.error) {
     const err = json.error;
     const message = err?.error_user_msg ?? err?.error_data?.details ?? err?.message ?? `WhatsApp API error ${response.status}`;
@@ -54,10 +36,23 @@ async function graphRequest<T>(path: string, init: RequestInit = {}): Promise<T>
   return json;
 }
 
+export async function graphRequest<T>(credentials: Pick<WhatsAppCredentials, "accessToken">, path: string, init: RequestInit = {}): Promise<T> {
+  const response = await fetch(graphUrl(path), {
+    ...init,
+    headers: {
+      Authorization: `Bearer ${credentials.accessToken}`,
+      ...(init.body ? { "Content-Type": "application/json" } : {}),
+      ...(init.headers ?? {}),
+    },
+    cache: "no-store",
+  });
+  return parseGraphResponse<T>(response);
+}
+
 type SendResponse = { messages?: Array<{ id: string }>; contacts?: Array<{ wa_id: string }> };
 
-export async function sendTextMessage(toWaId: string, body: string): Promise<{ messageId: string }> {
-  const json = await graphRequest<SendResponse>(`${phoneNumberId()}/messages`, {
+export async function sendTextMessage(credentials: WhatsAppCredentials, toWaId: string, body: string): Promise<{ messageId: string }> {
+  const json = await graphRequest<SendResponse>(credentials, `${credentials.phoneNumberId}/messages`, {
     method: "POST",
     body: JSON.stringify({
       messaging_product: "whatsapp",
@@ -80,10 +75,11 @@ export type TemplateComponent = {
 };
 
 export async function sendTemplateMessage(
+  credentials: WhatsAppCredentials,
   toWaId: string,
   template: { name: string; language: string; components?: TemplateComponent[] },
 ): Promise<{ messageId: string }> {
-  const json = await graphRequest<SendResponse>(`${phoneNumberId()}/messages`, {
+  const json = await graphRequest<SendResponse>(credentials, `${credentials.phoneNumberId}/messages`, {
     method: "POST",
     body: JSON.stringify({
       messaging_product: "whatsapp",
@@ -102,8 +98,8 @@ export async function sendTemplateMessage(
   return { messageId: id };
 }
 
-export async function markMessageRead(waMessageId: string): Promise<void> {
-  await graphRequest(`${phoneNumberId()}/messages`, {
+export async function markMessageRead(credentials: WhatsAppCredentials, waMessageId: string): Promise<void> {
+  await graphRequest(credentials, `${credentials.phoneNumberId}/messages`, {
     method: "POST",
     body: JSON.stringify({ messaging_product: "whatsapp", status: "read", message_id: waMessageId }),
   }).catch(() => undefined);
@@ -111,12 +107,12 @@ export async function markMessageRead(waMessageId: string): Promise<void> {
 
 export type MediaInfo = { url: string; mime_type: string; sha256: string; file_size: number; id: string };
 
-export async function getMediaInfo(mediaId: string): Promise<MediaInfo> {
-  return graphRequest<MediaInfo>(`${encodeURIComponent(mediaId)}?phone_number_id=${encodeURIComponent(phoneNumberId())}`);
+export async function getMediaInfo(credentials: WhatsAppCredentials, mediaId: string): Promise<MediaInfo> {
+  return graphRequest<MediaInfo>(credentials, `${encodeURIComponent(mediaId)}?phone_number_id=${encodeURIComponent(credentials.phoneNumberId)}`);
 }
 
-export async function downloadMedia(url: string): Promise<Response> {
-  const response = await fetch(url, { headers: { Authorization: `Bearer ${accessToken()}` }, cache: "no-store" });
+export async function downloadMedia(credentials: WhatsAppCredentials, url: string): Promise<Response> {
+  const response = await fetch(url, { headers: { Authorization: `Bearer ${credentials.accessToken}` }, cache: "no-store" });
   if (!response.ok) throw new WhatsAppApiError(`Unable to download media (${response.status})`);
   return response;
 }
@@ -130,9 +126,10 @@ export type PhoneNumberInfo = {
   platform_type?: string;
 };
 
-export async function getPhoneNumberInfo(): Promise<PhoneNumberInfo> {
+export async function getPhoneNumberInfo(credentials: Pick<WhatsAppCredentials, "accessToken" | "phoneNumberId">): Promise<PhoneNumberInfo> {
   return graphRequest<PhoneNumberInfo>(
-    `${phoneNumberId()}?fields=id,display_phone_number,verified_name,quality_rating,code_verification_status,platform_type`,
+    credentials,
+    `${credentials.phoneNumberId}?fields=id,display_phone_number,verified_name,quality_rating,code_verification_status,platform_type`,
   );
 }
 
@@ -151,10 +148,11 @@ export type MessageTemplate = {
   }>;
 };
 
-export async function listApprovedTemplates(): Promise<MessageTemplate[]> {
-  const wabaId = env.whatsapp.businessAccountId;
-  if (!wabaId) throw new WhatsAppApiError("WHATSAPP_BUSINESS_ACCOUNT_ID is not configured.");
+export async function listApprovedTemplates(credentials: WhatsAppCredentials): Promise<MessageTemplate[]> {
+  const wabaId = credentials.wabaId;
+  if (!wabaId) throw new WhatsAppApiError("The WhatsApp Business Account id of this number is not known (set WHATSAPP_BUSINESS_ACCOUNT_ID).");
   const json = await graphRequest<{ data?: MessageTemplate[] }>(
+    credentials,
     `${wabaId}/message_templates?fields=id,name,status,category,language,components&limit=100`,
   );
   return (json.data ?? []).filter((template) => template.status === "APPROVED");

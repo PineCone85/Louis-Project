@@ -43,6 +43,13 @@
       "when": 1791060935403,
       "tag": "0005_message_id_index",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792081263685,
+      "tag": "0006_whatsapp_accounts",
+      "breakpoints": true
     }
   ]
 }

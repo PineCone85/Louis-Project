@@ -136,7 +136,22 @@ export const env = {
     get apiVersion(): string {
       return read("WHATSAPP_API_VERSION") ?? "v21.0";
     },
-    /** True when the values needed to send and receive messages are present. */
+    /** Meta app id, needed for the in-app "Connect WhatsApp" flow (Embedded Signup). */
+    get appId(): string | undefined {
+      return read("WHATSAPP_APP_ID");
+    },
+    /** Configuration id of the Facebook Login for Business configuration used by Embedded Signup. */
+    get signupConfigId(): string | undefined {
+      return read("WHATSAPP_CONFIG_ID");
+    },
+    /** True when agents can connect their own numbers from Settings > WhatsApp. */
+    get signupConfigured(): boolean {
+      return Boolean(read("WHATSAPP_APP_ID") && read("WHATSAPP_APP_SECRET") && read("WHATSAPP_CONFIG_ID") && read("WHATSAPP_VERIFY_TOKEN"));
+    },
+    /**
+     * True when a single business number is configured through the environment (the original setup).
+     * Numbers connected in the app are stored in the database instead; see lib/whatsapp/accounts.
+     */
     get configured(): boolean {
       return Boolean(
         read("WHATSAPP_PHONE_NUMBER_ID") && read("WHATSAPP_ACCESS_TOKEN") && read("WHATSAPP_VERIFY_TOKEN"),

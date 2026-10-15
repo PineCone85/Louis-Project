@@ -76,11 +76,12 @@ export async function sendWhatsAppAction(_prev: ActionResult, formData: FormData
   const phone = normalizePhone(formString(formData, "phone"), settings.defaultCountry);
   const text = formString(formData, "text");
   const contactName = formOptional(formData, "contactName");
+  const phoneNumberId = formOptional(formData, "fromNumber");
   if (!phone) return { ok: false, error: "A valid phone number is required" };
   if (!text) return { ok: false, fieldErrors: { text: "Write a message first" } };
 
   try {
-    await sendWhatsAppText({ toPhone: phone, text, clientId, contactName });
+    await sendWhatsAppText({ toPhone: phone, text, clientId, contactName, phoneNumberId });
   } catch (error) {
     if (error instanceof WhatsAppApiError && error.outsideWindow) {
       return {
@@ -105,11 +106,12 @@ export async function sendWhatsAppTemplateAction(_prev: ActionResult, formData: 
   const bodyParams = formList(formData, "bodyParam");
   const preview = formString(formData, "preview") || `Template: ${templateName}`;
   const contactName = formOptional(formData, "contactName");
+  const phoneNumberId = formOptional(formData, "fromNumber");
   if (!phone) return { ok: false, error: "A valid phone number is required" };
   if (!templateName) return { ok: false, error: "Choose a template" };
 
   try {
-    await sendWhatsAppTemplate({ toPhone: phone, templateName, language, headerParams, bodyParams, preview, clientId, contactName });
+    await sendWhatsAppTemplate({ toPhone: phone, templateName, language, headerParams, bodyParams, preview, clientId, contactName, phoneNumberId });
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "Unable to send template message" };
   }
