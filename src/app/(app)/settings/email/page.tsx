@@ -7,6 +7,7 @@ import { googleRedirectUri } from "@/lib/gmail/oauth";
 import { microsoftRedirectUri } from "@/lib/outlook/oauth";
 import { outlookPushPossible } from "@/lib/outlook/sync";
 import { getSettings } from "@/lib/queries/settings";
+import { ConnectMailServerForm } from "@/components/settings/connect-mail-server";
 import { ActionButton, ConfirmButton } from "@/components/ui/form-controls";
 import { DescriptionList, EmptyState, PageBody, Panel, cx } from "@/components/ui/primitives";
 
@@ -24,7 +25,7 @@ const ERRORS: Record<string, string> = {
   mismatch: "You signed in with a different mailbox than the one you were reconnecting. The original mailbox is unchanged; connect the other one from the Add a mailbox section if you meant to.",
 };
 
-export default async function EmailSettingsPage({ searchParams }: { searchParams: Promise<{ connected?: string; error?: string; provider?: string }> }) {
+export default async function EmailSettingsPage({ searchParams }: { searchParams: Promise<{ connected?: string; error?: string; provider?: string; mailbox?: string }> }) {
   const [params, accounts, settings] = await Promise.all([searchParams, listEmailAccounts(), getSettings()]);
   const providers = configuredProviders();
   const outlookPush = outlookPushPossible();
@@ -32,6 +33,7 @@ export default async function EmailSettingsPage({ searchParams }: { searchParams
   const gmailPushUrl = `${env.appUrl}/api/webhooks/gmail?token=${env.google.pushToken ?? "{GMAIL_PUSH_TOKEN}"}`;
   const outlookPushUrl = `${env.appUrl}/api/webhooks/outlook`;
   const cronUrl = `${env.appUrl}/api/cron/sync`;
+  const editing = accounts.find((a) => a.provider === "imap" && a.id === params.mailbox) ?? null;
 
   return (
     <PageBody>
@@ -43,13 +45,16 @@ export default async function EmailSettingsPage({ searchParams }: { searchParams
           {accounts.length === 0 ? (
             <EmptyState
               title="No mailbox connected"
-              description="Connect the Gmail or Outlook account you use with clients. Incoming mail is matched to clients by address, shown on their timeline, and replies are sent through the same account."
+              description="Connect the mailbox you use with clients: Gmail, Outlook, or any other address through its mail server. Incoming mail is matched to clients by address, shown on their timeline, and replies are sent through the same account."
             />
           ) : (
             <ul className="divide-y divide-line">
               {accounts.map((account) => {
-                const pushConfigured = account.provider === "gmail" ? Boolean(env.google.pubsubTopic) : outlookPush.ok;
-                const reconnectHref = `${account.provider === "gmail" ? "/api/auth/google" : "/api/auth/microsoft"}?hint=${encodeURIComponent(account.emailAddress)}`;
+                const pushConfigured = account.provider === "gmail" ? Boolean(env.google.pubsubTopic) : account.provider === "outlook" && outlookPush.ok;
+                const reconnectHref =
+                  account.provider === "imap"
+                    ? `/settings/email?mailbox=${account.id}#mail-server`
+                    : `${account.provider === "gmail" ? "/api/auth/google" : "/api/auth/microsoft"}?hint=${encodeURIComponent(account.emailAddress)}`;
                 const subscriptionError = account.provider === "outlook" ? account.syncState.outlook?.subscriptionError : null;
                 const disconnect = disconnectEmailAccountAction.bind(null, account.id);
                 const enablePush = enablePushAction.bind(null, account.id);
@@ -57,7 +62,7 @@ export default async function EmailSettingsPage({ searchParams }: { searchParams
                   <li key={account.id} className="px-5 py-4">
                     <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                       <div className="flex items-center gap-2">
-                        <span className={cx("badge", account.provider === "gmail" ? "badge-sage" : "badge-ink")}>{providerLabel(account.provider)}</span>
+                        <span className={cx("badge", account.provider === "gmail" ? "badge-sage" : account.provider === "imap" ? "badge-neutral" : "badge-ink")}>{providerLabel(account.provider)}</span>
                         <span className="text-[14px] font-semibold text-ink">{account.emailAddress}</span>
                         {account.displayName ? <span className="text-[12px] text-ink-muted">{account.displayName}</span> : null}
                       </div>
@@ -68,7 +73,7 @@ export default async function EmailSettingsPage({ searchParams }: { searchParams
                           </ActionButton>
                         ) : null}
                         <a href={reconnectHref} className="btn btn-secondary btn-sm">
-                          Reconnect
+                          {account.provider === "imap" ? "Edit settings" : "Reconnect"}
                         </a>
                         <ConfirmButton
                           className="btn-danger btn-sm"
@@ -82,6 +87,14 @@ export default async function EmailSettingsPage({ searchParams }: { searchParams
                     <DescriptionList
                       items={[
                         { label: "Connected", value: formatDateTime(account.connectedAt, settings.timezone) },
+                        ...(account.provider === "imap" && account.serverConfig
+                          ? [
+                              {
+                                label: "Servers",
+                                value: `${account.serverConfig.imap.host}:${account.serverConfig.imap.port} (IMAP), ${account.serverConfig.smtp.host}:${account.serverConfig.smtp.port} (SMTP)`,
+                              },
+                            ]
+                          : []),
                         { label: "Last sync", value: account.lastSyncAt ? formatDateTime(account.lastSyncAt, settings.timezone) : "Not yet" },
                         {
                           label: "Initial import",
@@ -91,7 +104,9 @@ export default async function EmailSettingsPage({ searchParams }: { searchParams
                           label: "Push notifications",
                           value: account.watchExpiresAt
                             ? `Active until ${formatDateTime(account.watchExpiresAt, settings.timezone)} (renewed automatically)`
-                            : pushConfigured
+                            : account.provider === "imap"
+                              ? "Not available for mail servers (checked every 45 seconds while the CRM is open)"
+                              : pushConfigured
                               ? "Not registered yet"
                               : account.provider === "outlook" && env.microsoft.webhookSecret && !outlookPush.ok
                                 ? outlookPush.reason
@@ -114,7 +129,7 @@ export default async function EmailSettingsPage({ searchParams }: { searchParams
 
         <Panel title="Add a mailbox">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            {EMAIL_PROVIDERS.map((provider) => {
+            {EMAIL_PROVIDERS.filter((provider) => provider.key !== "imap").map((provider) => {
               const available = providers.includes(provider.key);
               return (
                 <div key={provider.key} className="rounded-md border border-line p-4">
@@ -135,8 +150,17 @@ export default async function EmailSettingsPage({ searchParams }: { searchParams
             })}
           </div>
           <p className="mt-4 text-[12px] text-ink-faint">
-            You can connect several mailboxes. Replies always go out from the mailbox that received the conversation; new emails use the mailbox you choose in the composer.
+            Email hosted anywhere else (with your domain, web host or internet provider) connects below with its mail-server settings. You can connect several mailboxes. Replies always go out from the mailbox that received the conversation; new emails use the mailbox you choose in the composer.
           </p>
+        </Panel>
+
+        <Panel title={editing ? `Mail-server settings for ${editing.emailAddress}` : "Connect any other email address"}>
+          <p className="mb-4 text-[13px] text-ink-muted">
+            {editing
+              ? "Update the password or servers. Mail already imported stays in the CRM and syncing carries on where it left off."
+              : "For addresses not hosted by Google or Microsoft. Use the incoming (IMAP) and outgoing (SMTP) settings your email host gives you; they are the same ones a mail program such as Outlook uses."}
+          </p>
+          <ConnectMailServerForm key={editing?.id ?? "new"} existing={editing ? { emailAddress: editing.emailAddress, config: editing.serverConfig } : null} />
         </Panel>
 
         <Panel title="How synchronisation works">

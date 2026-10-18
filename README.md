@@ -9,7 +9,7 @@ Built with Next.js 16, React 19, Tailwind CSS 4, Drizzle ORM and Postgres. Desig
 - **Clients**: create, edit, archive and delete clients; budgets, areas, requirements and notes; follow-up reminders; an activity log of notes, calls, meetings and viewings.
 - **Pipeline**: a residential buyer pipeline (Prospect, Contacted, Qualified, Property Search, Viewing, Interested, Offer Submitted, Negotiation, Offer Accepted, Closing, Completed, Lost) with a drag-and-drop board and per-client stage controls. Every stage change is logged.
 - **Properties**: manual property records with price, location, specifications, features and private notes. Link properties to clients with a status (suggested, interested, viewing scheduled, viewed, offer made, not interested, purchased), viewing dates and notes. Both directions are visible.
-- **Gmail and Outlook**: connect one or more mailboxes with OAuth: Google (Gmail or Google Workspace) and Microsoft (Microsoft 365, Exchange Online or personal Outlook.com). Incoming mail is matched to clients by email address, shown on the client timeline and in the unified inbox, and can be replied to from the CRM (replies thread correctly in the mailbox). Mail you send from the mailbox itself to known clients is imported too. Attachments open through the CRM.
+- **Gmail, Outlook and any other mailbox**: connect one or more mailboxes with OAuth: Google (Gmail or Google Workspace) and Microsoft (Microsoft 365, Exchange Online or personal Outlook.com). Addresses hosted anywhere else (a domain's own mail server or web host such as xneelo or cPanel) connect with their IMAP and SMTP settings. Incoming mail is matched to clients by email address, shown on the client timeline and in the unified inbox, and can be replied to from the CRM (replies thread correctly in the mailbox). Mail you send from the mailbox itself to known clients is imported too. Attachments open through the CRM.
 - **WhatsApp**: the official WhatsApp Business Platform (Cloud API). Agents connect their own WhatsApp Business numbers in Settings with Meta's Embedded Signup, including numbers they keep using in the WhatsApp Business app. Incoming messages are matched to clients by mobile number; text, images, documents, audio, video, locations and contacts are supported. Reply from the CRM inside the 24-hour customer service window, or send an approved template message outside it.
 - **Unified inbox and notifications**: every conversation across both channels, unread counts, an unread badge in the navigation, in-app notifications for new messages, and a dashboard list of clients who need attention. Conversations from unknown senders can be linked to an existing client or turned into a new client in one click.
 - **Automatic replies**: deterministic rules (every message, first message from a new contact, keyword match, outside business hours), scoped to clients or unknown contacts and to pipeline stages, with cooldowns and once-per-conversation protection. Replies use your own templates. Nothing is AI-generated. Automated senders, bulk mail and bounces never receive a reply.
@@ -25,13 +25,14 @@ Built with Next.js 16, React 19, Tailwind CSS 4, Drizzle ORM and Postgres. Desig
 | Auth | Single admin: `ADMIN_EMAIL` + scrypt password hash, HS256 JWT session cookie |
 | Gmail | Google OAuth 2.0 (PKCE), Gmail REST API, incremental `history` sync, optional Pub/Sub push |
 | Outlook | Microsoft identity platform OAuth 2.0 (PKCE), Microsoft Graph mail API, delta-query sync, optional change-notification webhooks |
+| Other mailboxes | IMAP (`imapflow`, read-only folder access, UID cursors) and SMTP (`nodemailer`); MIME parsing with `mailparser` |
 | WhatsApp | Meta WhatsApp Business Cloud API with signed webhooks |
 | Scheduling | Vercel Cron (or any scheduler) hitting `/api/cron/sync`, plus in-app polling while the CRM is open |
 | Styling | Tailwind CSS 4, white / sage / black palette, Inter and Instrument Serif |
 
 There is no background worker. Mailboxes are synchronised by:
 
-1. the app itself every 45 seconds while it is open (an incremental Gmail `history.list` or Graph delta call per mailbox),
+1. the app itself every 45 seconds while it is open (an incremental Gmail `history.list`, Graph delta call or IMAP UID check per mailbox),
 2. the scheduled `/api/cron/sync` endpoint (daily on Vercel Hobby, as often as you like on Pro or with an external scheduler), and
 3. push notifications, if configured, for instant delivery: Google Cloud Pub/Sub for Gmail, Microsoft Graph change notifications for Outlook.
 
@@ -130,7 +131,20 @@ Optional instant notifications: set `MICROSOFT_WEBHOOK_SECRET` to a random strin
 
 Client secrets expire (two years at most). When the secret expires, mail stops syncing with a "reconnect" error; create a new secret, update `MICROSOFT_CLIENT_SECRET`, redeploy and reconnect the mailbox.
 
-### 5. WhatsApp (Meta WhatsApp Business Platform)
+### 5. Other mailboxes (IMAP and SMTP)
+
+Any address that is not hosted by Google or Microsoft, for example one on the domain's own mail server or a web host such as xneelo, Afrihost or cPanel, connects with the same settings a mail program uses. No environment variables are needed.
+
+In **Settings > Email accounts**, under **Connect any other email address**, enter the address, its password, and the incoming (IMAP) and outgoing (SMTP) server names. Left blank, both servers default to `mail.<domain>` with IMAP on port 993 and SMTP on port 465 over SSL/TLS; ports, STARTTLS and a separate username are under **Ports, security and username**. The CRM signs in to both servers before saving and explains what is wrong if it cannot, including the server name to use when a certificate is issued for the hosting server rather than `mail.<domain>`.
+
+- Folders are opened read-only: syncing never marks mail as read, moves or deletes it, so the agent's mail program is unaffected.
+- The inbox and the sent folder (the server's `\Sent` folder, or one named Sent / Sent Items) are synchronised. New mail is tracked by UID from the moment of connection; the 30 days before are imported newest first.
+- Replies go out through SMTP with the right `In-Reply-To` and `References` headers, and a copy is saved to the sent folder so it appears in the agent's mail program too.
+- There are no push notifications for mail servers: new mail arrives while the CRM is open (every 45 seconds) and at each scheduled sync.
+- A mailbox read with POP3 by a mail program that deletes mail from the server can lose messages before the CRM sees them; set that program to leave a copy on the server, or use IMAP.
+- **Edit settings** on the connected mailbox updates the password or servers without importing anything again.
+
+### 6. WhatsApp (Meta WhatsApp Business Platform)
 
 Agents connect their own WhatsApp Business numbers from **Settings > WhatsApp** with Meta's Embedded Signup: a Facebook popup in which they pick or create their WhatsApp Business Account and number. Several numbers can be connected; each conversation is answered from the number the client wrote to, and the composer offers a **From** choice when there is more than one. Setting this up once, as the owner of the Meta app:
 
@@ -172,7 +186,7 @@ Settings > Pipeline lets you rename, reorder, add and remove the stages clients 
 ## Security notes
 
 - Passwords are hashed with scrypt; sessions are HS256 JWTs in an httpOnly, SameSite cookie; failed logins are throttled per IP.
-- Google and Microsoft refresh tokens are encrypted at rest with a key derived from `AUTH_SECRET`.
+- Google and Microsoft refresh tokens and mail-server passwords are encrypted at rest with a key derived from `AUTH_SECRET`.
 - WhatsApp webhooks are verified with the `X-Hub-Signature-256` HMAC; Gmail push, Outlook notifications and cron endpoints require their shared secrets.
 - Email HTML is sanitised before storage; attachments and WhatsApp media are proxied through authenticated endpoints and never stored in the database.
 - The app sets `X-Frame-Options`, `X-Content-Type-Options` and a referrer policy on every response.
@@ -202,6 +216,7 @@ src/lib/db         Drizzle schema and connection
 src/lib/email      shared mailbox layer: accounts and tokens, sync orchestration, sending
 src/lib/gmail      Google OAuth, Gmail API client, MIME parsing and building, sync, sending
 src/lib/outlook    Microsoft OAuth, Graph API client, message parsing, delta sync, sending
+src/lib/imap       IMAP/SMTP mailboxes: connection and error messages, MIME parsing, UID sync, sending, attachments
 src/lib/whatsapp   Cloud API client, webhook parsing and verification, sending
 src/lib/messaging  ingestion, client matching, notifications, activity log
 src/lib/auto-reply rule engine and template rendering

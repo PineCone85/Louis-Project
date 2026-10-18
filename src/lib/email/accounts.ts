@@ -1,6 +1,6 @@
 import { and, asc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { emailAccounts, type EmailAccount, type EmailProvider, type EmailSyncState } from "@/lib/db/schema";
+import { emailAccounts, type EmailAccount, type EmailProvider, type EmailSyncState, type MailServerConfig } from "@/lib/db/schema";
 import { decryptSecret, encryptSecret } from "@/lib/crypto";
 import { env } from "@/lib/env";
 import { GoogleAuthError, refreshAccessToken as refreshGoogleToken, revokeToken as revokeGoogleToken } from "@/lib/gmail/oauth";
@@ -32,11 +32,14 @@ export type SaveEmailAccountInput = {
   provider: EmailProvider;
   emailAddress: string;
   displayName?: string | null;
+  /** The OAuth refresh token, or the password of a mail-server account. */
   refreshToken: string;
-  accessToken: string;
+  /** Null for mail-server accounts, which have no access token. */
+  accessToken: string | null;
   expiresIn: number;
   scopes: string;
   syncState: EmailSyncState;
+  serverConfig?: MailServerConfig | null;
 };
 
 /**
@@ -49,9 +52,10 @@ export async function saveEmailAccount(input: SaveEmailAccountInput): Promise<Em
   const credentials = {
     displayName: input.displayName ?? null,
     refreshTokenEnc: encryptSecret(input.refreshToken),
-    accessTokenEnc: encryptSecret(input.accessToken),
-    accessTokenExpiresAt: new Date(now.getTime() + Math.max(60, input.expiresIn - 60) * 1000),
+    accessTokenEnc: input.accessToken ? encryptSecret(input.accessToken) : null,
+    accessTokenExpiresAt: input.accessToken ? new Date(now.getTime() + Math.max(60, input.expiresIn - 60) * 1000) : null,
     scopes: input.scopes,
+    ...(input.serverConfig ? { serverConfig: input.serverConfig } : {}),
     syncLockedAt: null,
     lastSyncError: null,
     lastSyncErrorAt: null,
@@ -84,6 +88,7 @@ export async function updateSyncState(account: EmailAccount, patch: EmailSyncSta
     ...account.syncState,
     ...(patch.gmail ? { gmail: { ...account.syncState.gmail, ...patch.gmail } } : {}),
     ...(patch.outlook ? { outlook: { ...account.syncState.outlook, ...patch.outlook } } : {}),
+    ...(patch.imap ? { imap: { ...account.syncState.imap, ...patch.imap } } : {}),
   };
   await updateEmailAccount(account.id, { syncState: next });
   account.syncState = next;

@@ -41,11 +41,11 @@ async function resolveAccount(input: SendEmailInput): Promise<EmailAccount | nul
   return getDefaultEmailAccount();
 }
 
-/** Sends an email through a connected mailbox (Gmail or Outlook) and records it in the CRM. */
+/** Sends an email through a connected mailbox (Gmail, Outlook or a mail server) and records it in the CRM. */
 export async function sendEmail(input: SendEmailInput): Promise<Message> {
   if (input.to.length === 0) throw new Error("A recipient is required.");
   const account = await resolveAccount(input);
-  if (!account && !env.demo) throw new Error("No email account is connected. Connect Gmail or Outlook in Settings before sending email.");
+  if (!account && !env.demo) throw new Error("No email account is connected. Connect a mailbox in Settings before sending email.");
 
   const settings = await getSettings();
   const fromAddress = account?.emailAddress ?? `${settings.agentName.split(" ")[0].toLowerCase() || "agent"}@demo.local`;
@@ -82,6 +82,22 @@ export async function sendEmail(input: SendEmailInput): Promise<Message> {
     });
     externalId = sent.externalId;
     threadId = sent.threadId ?? input.replyTo?.threadId ?? null;
+    messageIdHeader = sent.messageIdHeader;
+  } else if (account.provider === "imap") {
+    const { sendViaImapAccount } = await import("@/lib/imap/send");
+    const domain = account.emailAddress.split("@")[1] ?? "localhost";
+    const sent = await sendViaImapAccount(account, {
+      from: { name: settings.agentName || null, address: account.emailAddress },
+      to: input.to,
+      cc: input.cc,
+      subject: input.subject,
+      text: input.text,
+      html,
+      messageId: `<${randomUUID()}@${domain}>`,
+      replyTo: input.replyTo ? { messageIdHeader: input.replyTo.messageIdHeader, references: input.replyTo.references } : null,
+    });
+    externalId = sent.externalId;
+    threadId = (sameMailbox ? input.replyTo?.threadId : null) ?? sent.threadId;
     messageIdHeader = sent.messageIdHeader;
   } else {
     const { sendViaOutlook } = await import("@/lib/outlook/send");
