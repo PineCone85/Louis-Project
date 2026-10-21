@@ -354,7 +354,27 @@ export const messageDrafts = pgTable(
   (t) => [index("message_drafts_status_idx").on(t.status, t.createdAt), index("message_drafts_client_idx").on(t.clientId)],
 );
 
-export type EmailProvider = "gmail" | "outlook";
+export type EmailProvider = "gmail" | "outlook" | "imap";
+
+/** Connection details of a mailbox reached directly over IMAP (reading) and SMTP (sending). */
+export type MailServerConfig = {
+  username: string;
+  imap: { host: string; port: number; secure: boolean };
+  smtp: { host: string; port: number; secure: boolean };
+};
+
+/** Progress through one IMAP folder. UIDs only mean something while the folder's UIDVALIDITY is unchanged. */
+export type ImapFolderState = {
+  path: string;
+  uidValidity: string;
+  /** The folder's UIDNEXT when tracking began: mail from here on is new mail, older mail belongs to the import. */
+  liveFromUid: number;
+  /** Highest UID at or above liveFromUid that has been processed. */
+  lastUid: number;
+  /** The import of the 30 days before liveFromUid works downwards from here. */
+  backfillBeforeUid: number;
+  backfillDone: boolean;
+};
 
 /** Provider-specific synchronisation cursors. */
 export type EmailSyncState = {
@@ -383,6 +403,11 @@ export type EmailSyncState = {
     inboxBackfillDone?: boolean;
     sentBackfillDone?: boolean;
   };
+  imap?: {
+    inbox?: ImapFolderState | null;
+    /** Null when the server has no folder for sent mail. */
+    sent?: ImapFolderState | null;
+  };
 };
 
 /** Connected mailboxes. Gmail and Outlook accounts share one table and sync pipeline. */
@@ -393,11 +418,14 @@ export const emailAccounts = pgTable(
     provider: text("provider").$type<EmailProvider>().notNull(),
     emailAddress: text("email_address").notNull(),
     displayName: text("display_name"),
+    /** OAuth refresh token, or for IMAP mailboxes the mail-server password. Always encrypted. */
     refreshTokenEnc: text("refresh_token_enc").notNull(),
     accessTokenEnc: text("access_token_enc"),
     accessTokenExpiresAt: timestamp("access_token_expires_at", { withTimezone: true }),
     scopes: text("scopes").notNull().default(""),
     syncState: jsonb("sync_state").$type<EmailSyncState>().notNull().default(sql`'{}'::jsonb`),
+    /** IMAP mailboxes only: servers, ports and username. */
+    serverConfig: jsonb("server_config").$type<MailServerConfig>(),
     /** Gmail: the Pub/Sub topic being watched. Outlook: the change-notification subscription id. */
     watchId: text("watch_id"),
     watchExpiresAt: timestamp("watch_expires_at", { withTimezone: true }),

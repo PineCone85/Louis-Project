@@ -2,6 +2,7 @@
 
 import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { z } from "zod";
 import { requireSession } from "@/lib/auth/session";
 import { db } from "@/lib/db";
@@ -10,10 +11,12 @@ import { disconnectEmailAccount, getEmailAccount } from "@/lib/email/accounts";
 import { syncEmailAccounts } from "@/lib/email/sync";
 import { GmailClient } from "@/lib/gmail/client";
 import { ensureGmailWatch } from "@/lib/gmail/sync";
+import { MailServerError } from "@/lib/imap/client";
+import { connectMailServer } from "@/lib/imap/connect";
 import { GraphClient } from "@/lib/outlook/client";
 import { ensureOutlookSubscription } from "@/lib/outlook/sync";
 import { normalizePhone } from "@/lib/phone";
-import { fieldErrorsFrom, formBoolean, formString, type ActionResult } from "@/lib/validation";
+import { fieldErrorsFrom, formBoolean, formNumber, formString, type ActionResult } from "@/lib/validation";
 
 const profileSchema = z.object({
   agentName: z.string().trim().max(120),
@@ -124,6 +127,48 @@ export async function disconnectEmailAccountAction(accountId: string): Promise<v
   revalidatePath("/", "layout");
 }
 
+const HOST = /^[a-z0-9.-]+$/i;
+const mailServerSchema = z.object({
+  emailAddress: z.email("Enter a valid email address"),
+  password: z.string().min(1, "Enter the email password"),
+  username: z.string().trim().max(254),
+  imapHost: z.string().trim().max(253).regex(HOST, "Enter a server name such as mail.example.com").or(z.literal("")),
+  imapPort: z.number().int().min(1).max(65535).nullable(),
+  imapSecurity: z.enum(["ssl", "starttls"]),
+  smtpHost: z.string().trim().max(253).regex(HOST, "Enter a server name such as mail.example.com").or(z.literal("")),
+  smtpPort: z.number().int().min(1).max(65535).nullable(),
+  smtpSecurity: z.enum(["ssl", "starttls"]),
+});
+
+/** Connects a mailbox hosted anywhere through IMAP and SMTP, after checking both sign-ins work. */
+export async function connectMailServerAction(_prev: ActionResult<{ emailAddress: string }>, formData: FormData): Promise<ActionResult<{ emailAddress: string }>> {
+  await requireSession();
+  const parsed = mailServerSchema.safeParse({
+    emailAddress: formString(formData, "emailAddress"),
+    password: formData.get("password")?.toString() ?? "",
+    username: formString(formData, "username"),
+    imapHost: formString(formData, "imapHost"),
+    imapPort: formNumber(formData, "imapPort"),
+    imapSecurity: formString(formData, "imapSecurity") || "ssl",
+    smtpHost: formString(formData, "smtpHost"),
+    smtpPort: formNumber(formData, "smtpPort"),
+    smtpSecurity: formString(formData, "smtpSecurity") || "ssl",
+  });
+  if (!parsed.success) return { ok: false, fieldErrors: fieldErrorsFrom(parsed.error) };
+  try {
+    const account = await connectMailServer(parsed.data);
+    after(async () => {
+      await syncEmailAccounts({ reason: "connect", budgetMs: 45_000, accountIds: [account.id] });
+    });
+  } catch (error) {
+    if (!(error instanceof MailServerError)) console.error("[imap] connecting a mailbox failed:", error);
+    return { ok: false, error: error instanceof Error ? error.message : "Unable to connect to the mail server" };
+  }
+  revalidatePath("/settings/email");
+  revalidatePath("/", "layout");
+  return { ok: true, data: { emailAddress: parsed.data.emailAddress } };
+}
+
 export async function syncNowAction(): Promise<ActionResult<{ processed: number; created: number }>> {
   await requireSession();
   const result = await syncEmailAccounts({ reason: "manual", budgetMs: 45_000 });
@@ -143,6 +188,9 @@ export async function enablePushAction(accountId: string): Promise<ActionResult>
   const account = await getEmailAccount(accountId);
   if (!account) return { ok: false, error: "This mailbox is no longer connected." };
   try {
+    if (account.provider === "imap") {
+      return { ok: false, error: "Mail servers do not offer push notifications; new mail is checked while the CRM is open." };
+    }
     if (account.provider === "gmail") {
       await ensureGmailWatch(new GmailClient(account), { ...account, watchExpiresAt: null, watchId: null });
     } else {

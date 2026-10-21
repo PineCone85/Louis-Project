@@ -34,10 +34,13 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ me
 
   // Rows without an account link pre-date multi-mailbox support or belong to a disconnected mailbox;
   // the id shape tells the provider apart (Gmail ids are short hex, Graph ids are long base64).
+  // Mail-server ids carry the mailbox, so they never need this.
   const looksLikeGmail = /^[0-9a-f]{10,24}$/i.test(message.externalId);
   const account = message.accountId
     ? await getEmailAccount(message.accountId)
-    : ((await listEmailAccounts()).find((a) => a.provider === (looksLikeGmail ? "gmail" : "outlook")) ?? null);
+    : message.externalId.startsWith("imap:")
+      ? null
+      : ((await listEmailAccounts()).find((a) => a.provider === (looksLikeGmail ? "gmail" : "outlook")) ?? null);
   if (!account) return NextResponse.json({ error: "The mailbox for this message is no longer connected" }, { status: 409 });
 
   const safeName = attachment.filename.replace(/[^\w.\- ]+/g, "_");
@@ -46,6 +49,13 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ me
   if (account.provider === "gmail") {
     const data = await new GmailClient(account).getAttachment(message.externalId, attachmentId);
     const bytes = Buffer.from(data.data.replace(/-/g, "+").replace(/_/g, "/"), "base64");
+    return new NextResponse(new Uint8Array(bytes), { headers: { ...headers, "Content-Length": String(bytes.length) } });
+  }
+
+  if (account.provider === "imap") {
+    const { getImapAttachment } = await import("@/lib/imap/attachments");
+    const bytes = await getImapAttachment(account, message, attachmentId);
+    if (!bytes) return NextResponse.json({ error: "The message is no longer on the mail server" }, { status: 404 });
     return new NextResponse(new Uint8Array(bytes), { headers: { ...headers, "Content-Length": String(bytes.length) } });
   }
 

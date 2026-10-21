@@ -44,7 +44,7 @@ export default async function DashboardPage() {
   const today = new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long", timeZone: settings.timezone }).format(new Date());
   const attentionCount = data.attentionCount;
   const setupItems = [
-    emailAccounts.length === 0 && !env.demo && { label: "Connect Gmail or Outlook to see client email in the CRM", href: "/settings/email" },
+    emailAccounts.length === 0 && !env.demo && { label: "Connect your mailbox to see client email in the CRM", href: "/settings/email" },
     !whatsappReady && !env.demo && { label: "Connect your WhatsApp Business number to receive WhatsApp messages", href: "/settings/whatsapp" },
     !settings.agentName && { label: "Add your name and signature for outgoing messages", href: "/settings" },
   ].filter((item): item is { label: string; href: string } => Boolean(item));

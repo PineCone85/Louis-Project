@@ -132,6 +132,8 @@ export type OutgoingEmail = {
   inReplyTo?: string | null;
   references?: string | null;
   messageId?: string;
+  /** Set when no provider API adds the Date header, as when sending over SMTP. */
+  date?: Date;
 };
 
 function encodeHeaderValue(value: string): string {
@@ -153,6 +155,7 @@ export function buildMimeMessage(email: OutgoingEmail): string {
   ];
   if (email.cc && email.cc.length > 0) lines.push(`Cc: ${email.cc.map(formatAddress).join(", ")}`);
   lines.push(`Subject: ${encodeHeaderValue(email.subject)}`);
+  if (email.date) lines.push(`Date: ${email.date.toUTCString().replace(/GMT$/, "+0000")}`);
   if (email.messageId) lines.push(`Message-ID: ${email.messageId}`);
   if (email.inReplyTo) lines.push(`In-Reply-To: ${email.inReplyTo}`);
   if (email.references) lines.push(`References: ${email.references}`);

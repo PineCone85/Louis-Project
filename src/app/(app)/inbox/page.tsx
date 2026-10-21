@@ -117,7 +117,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
                     ? "Only conversations linked to a client are shown. Switch to Everyone to see all contacts."
                     : emailAccounts.length > 0 || whatsappReady
                     ? "Messages from clients will appear here as they arrive."
-                    : "Connect Gmail or Outlook, or configure WhatsApp, in Settings to start receiving client messages."
+                    : "Connect a mailbox, or configure WhatsApp, in Settings to start receiving client messages."
                 }
               />
             ) : (

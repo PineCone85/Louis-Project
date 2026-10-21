@@ -50,6 +50,13 @@
       "when": 1792081263685,
       "tag": "0006_whatsapp_accounts",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1792345345491,
+      "tag": "0007_imap_accounts",
+      "breakpoints": true
     }
   ]
 }

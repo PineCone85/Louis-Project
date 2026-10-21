@@ -107,7 +107,7 @@ export function Timeline(props: Props) {
       key: "email",
       label: "Email",
       available: emailAvailable,
-      reason: !emailConnected ? "Connect Gmail or Outlook in Settings to send email." : "Add an email address to send email.",
+      reason: !emailConnected ? "Connect a mailbox in Settings to send email." : "Add an email address to send email.",
     },
     {
       key: "whatsapp",

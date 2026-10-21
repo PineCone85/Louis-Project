@@ -94,6 +94,7 @@ describe("sendViaOutlook", () => {
       accessTokenExpiresAt: new Date(Date.now() + 3_600_000),
       scopes: "",
       syncState: {},
+      serverConfig: null,
       watchId: null,
       watchExpiresAt: null,
       backfillCompletedAt: null,

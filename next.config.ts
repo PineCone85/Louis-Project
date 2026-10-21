@@ -6,7 +6,8 @@ const nextConfig: NextConfig = {
   distDir: process.env.NEXT_DIST_DIR || ".next",
   reactStrictMode: true,
   poweredByHeader: false,
-  serverExternalPackages: ["pg"],
+  // Node-only mail libraries are loaded from node_modules at runtime rather than bundled.
+  serverExternalPackages: ["pg", "imapflow", "mailparser", "nodemailer"],
   async headers() {
     return [
       {

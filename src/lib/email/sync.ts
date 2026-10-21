@@ -75,6 +75,9 @@ async function syncOne(account: EmailAccount, ctx: ProviderSyncContext): Promise
   if (account.provider === "gmail") {
     const { syncGmailAccount } = await import("@/lib/gmail/sync");
     await syncGmailAccount(account, ctx);
+  } else if (account.provider === "imap") {
+    const { syncImapAccount } = await import("@/lib/imap/sync");
+    await syncImapAccount(account, ctx);
   } else {
     const { syncOutlookAccount } = await import("@/lib/outlook/sync");
     await syncOutlookAccount(account, ctx);
