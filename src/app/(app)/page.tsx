@@ -10,23 +10,24 @@ import { env } from "@/lib/env";
 import { whatsAppAvailable } from "@/lib/whatsapp/accounts";
 import { formatDate, formatRelative, formatSmartDate, fullName } from "@/lib/format";
 import { SyncButton } from "@/components/dashboard/sync-button";
-import { Avatar, EmptyState, PageBody, PageHeader, Panel, StageChip } from "@/components/ui/primitives";
+import { Avatar, EmptyState, PageBody, PageHeader, Panel, StageChip, cx } from "@/components/ui/primitives";
 
 export const metadata = { title: "Dashboard" };
 
-function Stat({ label, value, href }: { label: string; value: number | string; href?: string }) {
+function Stat({ label, value, href, accent }: { label: string; value: number | string; href?: string; accent?: boolean }) {
   const inner = (
-    <div className="px-5 py-4">
-      <div className="text-[11px] font-medium tracking-wide text-ink-muted uppercase">{label}</div>
-      <div className="mt-1 font-serif text-[30px] leading-none text-ink">{value}</div>
-    </div>
+    <>
+      <div className="text-[12px] font-medium text-ink-muted">{label}</div>
+      <div className={cx("mt-2 font-serif text-[36px] leading-none", accent ? "text-sage-700" : "text-ink")}>{value}</div>
+    </>
   );
+  const className = "panel block px-5 py-4 transition-all";
   return href ? (
-    <Link href={href} className="block border-line bg-paper transition-colors hover:bg-sage-50/60 max-md:border-b md:border-r md:last:border-r-0">
+    <Link href={href} className={cx(className, "hover:-translate-y-0.5 hover:border-sage-200 hover:shadow-pop")}>
       {inner}
     </Link>
   ) : (
-    <div className="border-line bg-paper max-md:border-b md:border-r md:last:border-r-0">{inner}</div>
+    <div className={className}>{inner}</div>
   );
 }
 
@@ -70,7 +71,7 @@ export default async function DashboardPage() {
       />
       <PageBody className="space-y-6">
         {pendingDrafts > 0 ? (
-          <Link href="/drafts" className="flex items-center justify-between gap-3 rounded-md border border-sage-200 bg-sage-50 px-5 py-3 text-[13px] text-sage-900 transition-colors hover:bg-sage-100">
+          <Link href="/drafts" className="flex items-center justify-between gap-3 rounded-md border border-sage-200 bg-sage-50 px-5 py-3.5 text-[13px] text-sage-900 shadow-card transition-colors hover:bg-sage-100">
             <span>
               <span className="font-semibold">{pendingDrafts} suggested message{pendingDrafts === 1 ? "" : "s"}</span> written by your workflows are waiting for review.
             </span>
@@ -95,9 +96,9 @@ export default async function DashboardPage() {
           </div>
         ) : null}
 
-        <div className="panel grid grid-cols-1 overflow-hidden md:grid-cols-5">
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
           <Stat label="Active clients" value={data.activeClients} href="/clients" />
-          <Stat label="Need attention" value={attentionCount} href="/clients?attention=1" />
+          <Stat label="Need attention" value={attentionCount} href="/clients?attention=1" accent={attentionCount > 0} />
           <Stat label="Follow-ups due" value={data.followUpCount} href="/clients?followups=1" />
           <Stat label="In transaction" value={data.inTransaction} href="/pipeline" />
           <Stat label="Available properties" value={`${propertyCounts.available}`} href="/properties?status=available" />

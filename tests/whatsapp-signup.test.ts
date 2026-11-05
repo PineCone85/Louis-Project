@@ -38,12 +38,14 @@ vi.mock("@/lib/whatsapp/accounts", async () => {
 
 const calls: Array<{ url: string; method: string; body: unknown; auth: string | null }> = [];
 let registerFails = false;
+let sharedWabas: string[] = ["222"];
 
 beforeEach(() => {
   stored.account = null;
   stored.updates.length = 0;
   calls.length = 0;
   registerFails = false;
+  sharedWabas = ["222"];
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
@@ -53,6 +55,10 @@ beforeEach(() => {
       calls.push({ url, method, body: init?.body ? JSON.parse(String(init.body)) : null, auth: headers.Authorization ?? null });
       const json = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status, headers: { "content-type": "application/json" } });
       if (url.includes("/oauth/access_token")) return json({ access_token: "business-token" });
+      if (url.includes("/debug_token")) {
+        return json({ data: { granular_scopes: [{ scope: "whatsapp_business_management", target_ids: sharedWabas }, { scope: "business_management", target_ids: ["777"] }] } });
+      }
+      if (url.includes("/333/phone_numbers")) return json({ data: [{ id: "111" }, { id: "112" }] });
       if (url.includes("/phone_numbers")) return json({ data: [{ id: "111" }] });
       if (url.includes("/subscribed_apps")) return json({ success: true });
       if (url.endsWith("/register")) {
@@ -100,5 +106,34 @@ describe("completeEmbeddedSignup", () => {
     const { completeEmbeddedSignup } = await import("@/lib/whatsapp/signup");
     await expect(completeEmbeddedSignup({ code: "code-1", phoneNumberId: "999", wabaId: "222", coexistence: false })).rejects.toThrow(/does not belong/);
     expect(stored.account).toBeNull();
+  });
+
+  it("finds the account and number from the token when the popup did not report them", async () => {
+    const { completeEmbeddedSignup } = await import("@/lib/whatsapp/signup");
+    const result = await completeEmbeddedSignup({ code: "code-1", phoneNumberId: null, wabaId: null, coexistence: true });
+    expect(result.account).toMatchObject({ phoneNumberId: "111", wabaId: "222" });
+    const debug = new URL(calls.find((c) => c.url.includes("/debug_token"))!.url);
+    expect(debug.searchParams.get("input_token")).toBe("business-token");
+    expect(debug.searchParams.get("access_token")).toBe("app-1|app-secret");
+    expect(calls.some((c) => c.url.includes("/222/subscribed_apps"))).toBe(true);
+  });
+
+  it("finds the account of a reported number when only the number id arrived", async () => {
+    const { completeEmbeddedSignup } = await import("@/lib/whatsapp/signup");
+    const result = await completeEmbeddedSignup({ code: "code-1", phoneNumberId: "111", wabaId: null, coexistence: true });
+    expect(result.account).toMatchObject({ phoneNumberId: "111", wabaId: "222" });
+  });
+
+  it("asks the agent to run signup again when several numbers were shared and none was reported", async () => {
+    sharedWabas = ["333"];
+    const { completeEmbeddedSignup } = await import("@/lib/whatsapp/signup");
+    await expect(completeEmbeddedSignup({ code: "code-1", coexistence: false })).rejects.toThrow(/Several numbers/);
+    expect(stored.account).toBeNull();
+  });
+
+  it("explains when no business account was shared", async () => {
+    sharedWabas = [];
+    const { completeEmbeddedSignup } = await import("@/lib/whatsapp/signup");
+    await expect(completeEmbeddedSignup({ code: "code-1", coexistence: false })).rejects.toThrow(/No WhatsApp Business Account/);
   });
 });

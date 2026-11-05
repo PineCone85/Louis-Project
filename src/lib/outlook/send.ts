@@ -18,6 +18,17 @@ function toRecipients(addresses: ParsedAddress[] | undefined): GraphRecipient[] 
 }
 
 /**
+ * Places the agent's text above the quoted original. createReply returns a complete HTML document,
+ * so the text goes inside its <body> rather than in front of <html>.
+ */
+export function withReplyAbove(quotedDocument: string, html: string): string {
+  const body = /<body[^>]*>/i.exec(quotedDocument);
+  if (!body) return `${html}<br>${quotedDocument}`;
+  const at = body.index + body[0].length;
+  return `${quotedDocument.slice(0, at)}${html}<br>${quotedDocument.slice(at)}`;
+}
+
+/**
  * Sends through Microsoft Graph. Replies are created with createReply so that
  * Outlook sets the threading headers itself; the agent's text is placed above
  * the quoted original, as a normal mail client would.
@@ -32,7 +43,7 @@ export async function sendViaOutlook(account: EmailAccount, input: OutlookSendIn
       const quoted = reply.body?.contentType?.toLowerCase() === "html" ? (reply.body?.content ?? "") : "";
       draft = await client.updateDraft(reply.id, {
         subject: input.subject,
-        body: { contentType: "html", content: quoted ? `${input.html}<br>${quoted}` : input.html },
+        body: { contentType: "html", content: quoted ? withReplyAbove(quoted, input.html) : input.html },
         toRecipients: toRecipients(input.to),
         ccRecipients: toRecipients(input.cc),
       });

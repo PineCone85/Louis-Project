@@ -134,7 +134,7 @@ export const env = {
       return read("WHATSAPP_VERIFY_TOKEN");
     },
     get apiVersion(): string {
-      return read("WHATSAPP_API_VERSION") ?? "v21.0";
+      return read("WHATSAPP_API_VERSION") ?? "v24.0";
     },
     /** Meta app id, needed for the in-app "Connect WhatsApp" flow (Embedded Signup). */
     get appId(): string | undefined {

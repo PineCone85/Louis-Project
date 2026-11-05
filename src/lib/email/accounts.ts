@@ -133,6 +133,7 @@ export async function getValidAccessToken(account: EmailAccount): Promise<string
     });
     account.accessTokenEnc = encryptSecret(tokens.access_token);
     account.accessTokenExpiresAt = expiresAt;
+    if (tokens.refresh_token) account.refreshTokenEnc = encryptSecret(tokens.refresh_token);
     return tokens.access_token;
   } catch (error) {
     const reconnect =
