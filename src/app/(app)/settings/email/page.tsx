@@ -8,8 +8,27 @@ import { microsoftRedirectUri } from "@/lib/outlook/oauth";
 import { outlookPushPossible } from "@/lib/outlook/sync";
 import { getSettings } from "@/lib/queries/settings";
 import { ConnectMailServerForm } from "@/components/settings/connect-mail-server";
+import { CopyField } from "@/components/ui/copy-field";
 import { ActionButton, ConfirmButton } from "@/components/ui/form-controls";
+import { Mail, Server } from "lucide-react";
 import { DescriptionList, EmptyState, PageBody, Panel, cx } from "@/components/ui/primitives";
+
+export const metadata = { title: "Email" };
+
+const PROVIDER_STYLE: Record<string, { chip: string; letter: string }> = {
+  gmail: { chip: "bg-[#fdecea] text-[#c5221f]", letter: "G" },
+  outlook: { chip: "bg-[#e6f0fb] text-[#0f6cbd]", letter: "O" },
+  imap: { chip: "bg-canvas text-ink-muted", letter: "@" },
+};
+
+function ProviderMark({ provider, size = "md" }: { provider: string; size?: "md" | "lg" }) {
+  const style = PROVIDER_STYLE[provider] ?? PROVIDER_STYLE.imap;
+  return (
+    <span className={cx("flex shrink-0 items-center justify-center rounded-sm font-semibold", style.chip, size === "lg" ? "h-10 w-10 text-[17px]" : "h-8 w-8 text-[14px]")}>
+      {provider === "imap" ? <Server size={size === "lg" ? 18 : 15} strokeWidth={1.75} /> : style.letter}
+    </span>
+  );
+}
 
 const ERRORS: Record<string, string> = {
   not_configured: "This provider is not configured yet. Add its client ID and secret to the environment, then reload this page.",
@@ -37,9 +56,19 @@ export default async function EmailSettingsPage({ searchParams }: { searchParams
 
   return (
     <PageBody>
-      <div className="max-w-3xl space-y-6">
+      <div className="max-w-4xl space-y-6">
         {params.connected ? <p className="form-success">{providerName} connected. Recent mail is being imported in the background.</p> : null}
         {params.error ? <p className="form-error">{ERRORS[params.error] ?? "Something went wrong while connecting the mailbox."}</p> : null}
+
+        <div className="flex items-center gap-3">
+          <span className="flex h-11 w-11 items-center justify-center rounded-md bg-sage-700 text-paper shadow-card">
+            <Mail size={20} strokeWidth={2} />
+          </span>
+          <div>
+            <h2 className="text-[17px] font-semibold text-ink">Email</h2>
+            <p className="text-[13px] text-ink-muted">Gmail, Outlook and any other mailbox. Client mail lands on their timeline and in the inbox.</p>
+          </div>
+        </div>
 
         <Panel title="Connected mailboxes" padded={false} actions={accounts.length > 0 ? <ActionButton className="btn-secondary btn-sm" action={syncNowAction} pendingText="Syncing…" successText="Sync complete">Sync now</ActionButton> : null}>
           {accounts.length === 0 ? (
@@ -59,12 +88,26 @@ export default async function EmailSettingsPage({ searchParams }: { searchParams
                 const disconnect = disconnectEmailAccountAction.bind(null, account.id);
                 const enablePush = enablePushAction.bind(null, account.id);
                 return (
-                  <li key={account.id} className="px-5 py-4">
-                    <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex items-center gap-2">
-                        <span className={cx("badge", account.provider === "gmail" ? "badge-sage" : account.provider === "imap" ? "badge-neutral" : "badge-ink")}>{providerLabel(account.provider)}</span>
-                        <span className="text-[14px] font-semibold text-ink">{account.emailAddress}</span>
-                        {account.displayName ? <span className="text-[12px] text-ink-muted">{account.displayName}</span> : null}
+                  <li key={account.id} className="px-5 py-5">
+                    <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+                      <div className="flex min-w-0 items-center gap-3">
+                        <ProviderMark provider={account.provider} />
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="truncate text-[15px] font-semibold text-ink">{account.emailAddress}</span>
+                            {account.lastSyncError ? (
+                              <span className="badge badge-danger">Needs attention</span>
+                            ) : !account.backfillCompletedAt ? (
+                              <span className="badge badge-warning">Importing</span>
+                            ) : (
+                              <span className="badge badge-success">Syncing</span>
+                            )}
+                          </div>
+                          <p className="text-[12px] text-ink-muted">
+                            {providerLabel(account.provider)}
+                            {account.displayName ? ` · ${account.displayName}` : ""}
+                          </p>
+                        </div>
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
                         {pushConfigured ? (
@@ -115,8 +158,13 @@ export default async function EmailSettingsPage({ searchParams }: { searchParams
                       ]}
                     />
                     {account.lastSyncError ? (
-                      <p className="form-error mt-3">
+                      <p className="form-error mt-4">
                         Last sync failed{account.lastSyncErrorAt ? ` at ${formatDateTime(account.lastSyncErrorAt, settings.timezone)}` : ""}: {account.lastSyncError}
+                      </p>
+                    ) : null}
+                    {account.lastSyncError ? (
+                      <p className="mt-2 text-[12px] text-ink-muted">
+                        {account.provider === "imap" ? "If the password changed, use Edit settings to enter the new one." : "If this keeps happening, use Reconnect to sign in to the mailbox again."}
                       </p>
                     ) : null}
                     {subscriptionError ? <p className="mt-3 text-[12px] text-danger">Push notifications could not be registered: {subscriptionError}</p> : null}
@@ -127,21 +175,25 @@ export default async function EmailSettingsPage({ searchParams }: { searchParams
           )}
         </Panel>
 
-        <Panel title="Add a mailbox">
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            {EMAIL_PROVIDERS.filter((provider) => provider.key !== "imap").map((provider) => {
-              const available = providers.includes(provider.key);
+        <Panel title={accounts.length > 0 ? "Add another mailbox" : "Connect your email"}>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+            {EMAIL_PROVIDERS.map((provider) => {
+              const available = provider.key === "imap" || providers.includes(provider.key);
+              const href = provider.key === "gmail" ? "/api/auth/google" : provider.key === "outlook" ? "/api/auth/microsoft" : "#mail-server";
               return (
-                <div key={provider.key} className="rounded-md border border-line p-4">
-                  <h3 className="text-[14px] font-semibold text-ink">{provider.label}</h3>
-                  <p className="mt-1 text-[13px] text-ink-muted">{provider.description}</p>
+                <div key={provider.key} className="flex flex-col rounded-md border border-line p-4 transition-colors hover:border-sage-200">
+                  <div className="flex items-center gap-3">
+                    <ProviderMark provider={provider.key} size="lg" />
+                    <h3 className="text-[14px] font-semibold text-ink">{provider.key === "imap" ? "Other email" : provider.label}</h3>
+                  </div>
+                  <p className="mt-2 flex-1 text-[13px] text-ink-muted">{provider.description}</p>
                   {available ? (
-                    <a href={provider.key === "gmail" ? "/api/auth/google" : "/api/auth/microsoft"} className="btn btn-primary mt-4">
-                      Connect {provider.label}
+                    <a href={href} className={cx("btn mt-4 w-full", provider.key === "imap" ? "btn-secondary" : "btn-primary")}>
+                      {provider.key === "imap" ? "Enter server settings" : `Sign in with ${provider.key === "gmail" ? "Google" : "Microsoft"}`}
                     </a>
                   ) : (
-                    <p className="mt-4 text-[12px] text-ink-faint">
-                      Not configured. Set {provider.key === "gmail" ? "GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET" : "MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET"} in the
+                    <p className="mt-4 rounded-sm bg-canvas px-3 py-2 text-[12px] text-ink-muted">
+                      Admin setup needed: set {provider.key === "gmail" ? "GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET" : "MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET"} in the
                       environment.
                     </p>
                   )}
@@ -150,7 +202,7 @@ export default async function EmailSettingsPage({ searchParams }: { searchParams
             })}
           </div>
           <p className="mt-4 text-[12px] text-ink-faint">
-            Email hosted anywhere else (with your domain, web host or internet provider) connects below with its mail-server settings. You can connect several mailboxes. Replies always go out from the mailbox that received the conversation; new emails use the mailbox you choose in the composer.
+            You can connect several mailboxes. Replies always go out from the mailbox that received the conversation; new emails use the mailbox you choose in the composer.
           </p>
         </Panel>
 
@@ -163,7 +215,7 @@ export default async function EmailSettingsPage({ searchParams }: { searchParams
           <ConnectMailServerForm key={editing?.id ?? "new"} existing={editing ? { emailAddress: editing.emailAddress, config: editing.serverConfig } : null} />
         </Panel>
 
-        <Panel title="How synchronisation works">
+        <Panel title="How synchronisation works (admin details)">
           <div className="space-y-3 text-[13px] text-ink-muted">
             <p>
               New mail is fetched whenever the CRM is open (every 45 seconds), whenever the scheduled sync runs, and instantly when push notifications are configured. Mail you send
@@ -171,8 +223,8 @@ export default async function EmailSettingsPage({ searchParams }: { searchParams
             </p>
             <DescriptionList
               items={[
-                { label: "Google OAuth redirect URI", value: <code className="text-[12px]">{googleRedirectUri()}</code> },
-                { label: "Microsoft redirect URI", value: <code className="text-[12px]">{microsoftRedirectUri()}</code> },
+                { label: "Google OAuth redirect URI", value: <CopyField value={googleRedirectUri()} label="Google redirect URI" /> },
+                { label: "Microsoft redirect URI", value: <CopyField value={microsoftRedirectUri()} label="Microsoft redirect URI" /> },
                 { label: "Scheduled sync endpoint", value: <code className="text-[12px]">GET {cronUrl}</code> },
                 { label: "Gmail Pub/Sub push endpoint", value: <code className="text-[12px]">{gmailPushUrl}</code> },
                 { label: "Outlook notification endpoint", value: <code className="text-[12px]">{outlookPushUrl}</code> },

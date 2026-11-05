@@ -13,8 +13,24 @@ export type ParsedGmailMessage = ParsedEmail;
 // Decoding incoming messages
 // ---------------------------------------------------------------------------
 
-export function decodeBase64Url(data: string): string {
-  return Buffer.from(data.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8");
+export function decodeBase64Url(data: string, charset?: string | null): string {
+  const bytes = Buffer.from(data.replace(/-/g, "+").replace(/_/g, "/"), "base64");
+  const label = (charset ?? "").trim().toLowerCase();
+  if (label && label !== "utf-8" && label !== "utf8" && label !== "us-ascii") {
+    // Gmail returns each part's bytes in the charset its Content-Type declares (windows-1252, iso-8859-1, ...).
+    try {
+      return new TextDecoder(label).decode(bytes);
+    } catch {
+      // Unknown charset label: fall back to UTF-8.
+    }
+  }
+  return bytes.toString("utf8");
+}
+
+/** The charset parameter of a part's Content-Type header, if any. */
+function partCharset(part: GmailPart): string | null {
+  const contentType = part.headers?.find((h) => h.name.toLowerCase() === "content-type")?.value ?? "";
+  return /charset\s*=\s*"?([^";\s]+)"?/i.exec(contentType)?.[1] ?? null;
 }
 
 export function encodeBase64Url(input: string | Buffer): string {
@@ -53,11 +69,11 @@ function walkParts(part: GmailPart | undefined, collected: Collected): void {
   }
 
   if (mimeType === "text/plain" && body.data) {
-    collected.text.push(decodeBase64Url(body.data));
+    collected.text.push(decodeBase64Url(body.data, partCharset(part)));
     return;
   }
   if (mimeType === "text/html" && body.data) {
-    collected.html.push(decodeBase64Url(body.data));
+    collected.html.push(decodeBase64Url(body.data, partCharset(part)));
     return;
   }
   if (body.attachmentId) {
@@ -141,6 +157,13 @@ function encodeHeaderValue(value: string): string {
   return `=?UTF-8?B?${Buffer.from(value, "utf8").toString("base64")}?=`;
 }
 
+/** An address for a raw MIME header: non-ASCII display names are RFC 2047 encoded and line breaks removed. */
+function formatHeaderAddress(entry: ParsedAddress): string {
+  const name = entry.name?.replace(/[\r\n]+/g, " ").trim() || null;
+  if (name && !/^[\x20-\x7E]*$/.test(name)) return `${encodeHeaderValue(name)} <${entry.address}>`;
+  return formatAddress({ name, address: entry.address });
+}
+
 function wrapBase64(input: string): string {
   const encoded = Buffer.from(input, "utf8").toString("base64");
   return encoded.replace(/(.{76})/g, "$1\r\n");
@@ -150,10 +173,10 @@ export function buildMimeMessage(email: OutgoingEmail): string {
   const boundary = `foyer_${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`;
   const html = email.html ?? textToHtml(email.text);
   const lines: string[] = [
-    `From: ${formatAddress(email.from)}`,
-    `To: ${email.to.map(formatAddress).join(", ")}`,
+    `From: ${formatHeaderAddress(email.from)}`,
+    `To: ${email.to.map(formatHeaderAddress).join(", ")}`,
   ];
-  if (email.cc && email.cc.length > 0) lines.push(`Cc: ${email.cc.map(formatAddress).join(", ")}`);
+  if (email.cc && email.cc.length > 0) lines.push(`Cc: ${email.cc.map(formatHeaderAddress).join(", ")}`);
   lines.push(`Subject: ${encodeHeaderValue(email.subject)}`);
   if (email.date) lines.push(`Date: ${email.date.toUTCString().replace(/GMT$/, "+0000")}`);
   if (email.messageId) lines.push(`Message-ID: ${email.messageId}`);

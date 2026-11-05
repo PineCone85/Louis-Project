@@ -15,16 +15,21 @@ function revalidate() {
 /** Finishes Embedded Signup with the code and ids the Meta popup returned. */
 export async function completeWhatsAppSignupAction(input: {
   code: string;
-  phoneNumberId: string;
-  wabaId: string;
+  phoneNumberId: string | null;
+  wabaId: string | null;
   coexistence: boolean;
-}): Promise<ActionResult<{ warning: string | null }>> {
+}): Promise<ActionResult<{ warning: string | null; number: string | null }>> {
   await requireSession();
-  if (!input.code || !input.phoneNumberId || !input.wabaId) return { ok: false, error: "Meta did not finish the signup. Please try again." };
+  if (!input.code) return { ok: false, error: "Meta did not finish the signup. Please try again." };
   try {
-    const { warning } = await completeEmbeddedSignup(input);
+    const { account, warning } = await completeEmbeddedSignup({
+      code: input.code,
+      phoneNumberId: input.phoneNumberId || null,
+      wabaId: input.wabaId || null,
+      coexistence: Boolean(input.coexistence),
+    });
     revalidate();
-    return { ok: true, data: { warning } };
+    return { ok: true, data: { warning, number: account.displayPhoneNumber ?? account.verifiedName ?? null } };
   } catch (error) {
     console.error("[whatsapp] embedded signup failed:", error);
     return { ok: false, error: error instanceof Error ? error.message : "Unable to connect the WhatsApp number" };

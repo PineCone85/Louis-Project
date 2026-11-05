@@ -17,11 +17,11 @@ export function PageHeader({
   eyebrow?: ReactNode;
 }) {
   return (
-    <header className="flex flex-col gap-4 border-b border-line bg-paper px-6 py-5 md:flex-row md:items-end md:justify-between md:px-8">
+    <header className="flex flex-col gap-4 px-4 pt-6 pb-2 sm:px-6 md:flex-row md:items-end md:justify-between md:px-8 md:pt-8">
       <div className="min-w-0">
-        {eyebrow ? <div className="mb-1 text-[12px] font-medium text-ink-muted">{eyebrow}</div> : null}
-        <h1 className="font-serif text-[30px] leading-none tracking-tight text-ink">{title}</h1>
-        {description ? <p className="mt-2 max-w-2xl text-[13px] text-ink-muted">{description}</p> : null}
+        {eyebrow ? <div className="mb-2 text-[12px] font-medium tracking-wide text-sage-600">{eyebrow}</div> : null}
+        <h1 className="font-serif text-[34px] leading-none tracking-tight text-ink">{title}</h1>
+        {description ? <p className="mt-2.5 max-w-2xl text-[14px] text-ink-muted">{description}</p> : null}
       </div>
       {actions ? <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div> : null}
     </header>
@@ -29,7 +29,7 @@ export function PageHeader({
 }
 
 export function PageBody({ children, className }: { children: ReactNode; className?: string }) {
-  return <div className={cx("px-6 py-6 md:px-8", className)}>{children}</div>;
+  return <div className={cx("px-4 py-6 sm:px-6 md:px-8", className)}>{children}</div>;
 }
 
 export function Panel({ title, actions, children, className, padded = true }: { title?: ReactNode; actions?: ReactNode; children: ReactNode; className?: string; padded?: boolean }) {
@@ -49,7 +49,9 @@ export function Panel({ title, actions, children, className, padded = true }: { 
 export function EmptyState({ title, description, action }: { title: string; description?: ReactNode; action?: ReactNode }) {
   return (
     <div className="flex flex-col items-center justify-center px-6 py-14 text-center">
-      <div className="mb-3 h-px w-10 bg-sage-300" />
+      <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-full bg-sage-50 ring-8 ring-sage-50/50">
+        <span className="h-2 w-2 rounded-full bg-sage-400" />
+      </div>
       <h3 className="text-[15px] font-semibold text-ink">{title}</h3>
       {description ? <p className="mt-1.5 max-w-sm text-[13px] text-ink-muted">{description}</p> : null}
       {action ? <div className="mt-5">{action}</div> : null}
@@ -62,7 +64,7 @@ export { StageChip } from "@/components/pipeline/stage-chip";
 export function ChannelTag({ channel, className }: { channel: string; className?: string }) {
   const label = channel === "email" ? "Email" : channel === "whatsapp" ? "WhatsApp" : channel;
   return (
-    <span className={cx("badge", channel === "whatsapp" ? "badge-solid" : "badge-sage", className)}>{label}</span>
+    <span className={cx("badge", channel === "whatsapp" ? "badge-whatsapp" : "badge-sage", className)}>{label}</span>
   );
 }
 
@@ -99,7 +101,7 @@ export function DescriptionList({ items }: { items: Array<{ label: string; value
     <dl className="grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2">
       {visible.map((item) => (
         <div key={item.label} className="min-w-0">
-          <dt className="text-[11px] font-medium tracking-wide text-ink-muted uppercase">{item.label}</dt>
+          <dt className="text-[11px] font-medium tracking-wide text-ink-faint uppercase">{item.label}</dt>
           <dd className="mt-0.5 text-[13px] break-words text-ink">{item.value}</dd>
         </div>
       ))}

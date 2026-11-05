@@ -5,30 +5,45 @@
   --font-serif: var(--font-serif), "Iowan Old Style", "Palatino Linotype", Georgia, serif;
 
   --color-paper: #ffffff;
-  --color-canvas: #f6f7f4;
-  --color-ink: #151715;
-  --color-ink-muted: #5d645b;
-  --color-ink-faint: #8d938b;
-  --color-line: #e2e5df;
-  --color-line-strong: #c7cec3;
+  --color-canvas: #f4f5f1;
+  --color-ink: #121a15;
+  --color-ink-muted: #56605a;
+  --color-ink-faint: #8b938d;
+  --color-line: #e3e7e1;
+  --color-line-strong: #cbd2c9;
 
-  --color-sage-50: #f2f5f0;
-  --color-sage-100: #e4eae0;
-  --color-sage-200: #cad5c4;
-  --color-sage-300: #a9bba2;
-  --color-sage-400: #8aa181;
-  --color-sage-500: #6e8766;
-  --color-sage-600: #576f51;
-  --color-sage-700: #455a42;
-  --color-sage-800: #364634;
-  --color-sage-900: #29362a;
+  --color-sage-50: #eff5f0;
+  --color-sage-100: #dfeae1;
+  --color-sage-200: #c2d6c6;
+  --color-sage-300: #9dbda4;
+  --color-sage-400: #75a080;
+  --color-sage-500: #548463;
+  --color-sage-600: #3f6c4d;
+  --color-sage-700: #31573d;
+  --color-sage-800: #264532;
+  --color-sage-900: #1b3224;
 
-  --color-danger: #9a3f2f;
-  --color-danger-soft: #f8ece8;
+  /* Sidebar */
+  --color-night: #111a15;
+  --color-night-soft: #1b261f;
+  --color-night-line: #26332b;
 
-  --radius-xs: 3px;
-  --radius-sm: 4px;
-  --radius-md: 6px;
+  --color-whatsapp: #1fa855;
+  --color-whatsapp-soft: #e8f7ee;
+
+  --color-warning: #8a5a12;
+  --color-warning-soft: #fbf3e2;
+
+  --color-danger: #a33a2a;
+  --color-danger-soft: #fbedea;
+
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+
+  --shadow-card: 0 1px 2px rgb(17 26 21 / 0.04), 0 2px 8px -2px rgb(17 26 21 / 0.06);
+  --shadow-pop: 0 10px 30px -10px rgb(17 26 21 / 0.25);
 }
 
 @layer base {
@@ -60,13 +75,16 @@
 
 @layer components {
   .btn {
-    @apply inline-flex h-9 shrink-0 cursor-pointer items-center justify-center gap-2 rounded-sm border px-3.5 text-[13px] font-medium whitespace-nowrap transition-colors duration-150 select-none disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex h-9 shrink-0 cursor-pointer items-center justify-center gap-2 rounded-sm border px-3.5 text-[13px] font-medium whitespace-nowrap transition-all duration-150 select-none focus-visible:ring-2 focus-visible:ring-sage-300 focus-visible:outline-none active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50 disabled:active:translate-y-0;
   }
   .btn-primary {
-    @apply border-ink bg-ink text-paper hover:border-sage-900 hover:bg-sage-900;
+    @apply border-sage-700 bg-sage-700 text-paper shadow-[0_1px_2px_rgb(17_26_21/0.15)] hover:border-sage-800 hover:bg-sage-800;
   }
   .btn-secondary {
-    @apply border-line-strong bg-paper text-ink hover:bg-sage-50;
+    @apply border-line-strong bg-paper text-ink shadow-[0_1px_2px_rgb(17_26_21/0.05)] hover:border-sage-300 hover:bg-sage-50;
+  }
+  .btn-whatsapp {
+    @apply border-whatsapp bg-whatsapp text-paper shadow-[0_1px_2px_rgb(17_26_21/0.15)] hover:brightness-95;
   }
   .btn-ghost {
     @apply border-transparent bg-transparent text-ink-muted hover:bg-sage-50 hover:text-ink;
@@ -111,13 +129,13 @@
   }
 
   .panel {
-    @apply rounded-md border border-line bg-paper;
+    @apply rounded-md border border-line bg-paper shadow-card;
   }
   .panel-header {
-    @apply flex items-center justify-between gap-4 border-b border-line px-5 py-3.5;
+    @apply flex items-center justify-between gap-4 border-b border-line px-5 py-4;
   }
   .panel-title {
-    @apply text-[13px] font-semibold tracking-tight text-ink;
+    @apply text-[14px] font-semibold tracking-tight text-ink;
   }
   .panel-body {
     @apply px-5 py-4;
@@ -139,7 +157,22 @@
     @apply border-ink bg-ink text-paper;
   }
   .badge-count {
-    @apply inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-sage-700 px-1.5 text-[11px] font-semibold text-paper;
+    @apply inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-sage-600 px-1.5 text-[11px] font-semibold text-paper;
+  }
+  .badge-success {
+    @apply border-sage-200 bg-sage-50 text-sage-700;
+  }
+  .badge-warning {
+    @apply border-warning/25 bg-warning-soft text-warning;
+  }
+  .badge-danger {
+    @apply border-danger/25 bg-danger-soft text-danger;
+  }
+  .badge-whatsapp {
+    @apply border-whatsapp/30 bg-whatsapp-soft text-[#137a3c];
+  }
+  .status-dot {
+    @apply inline-block h-2 w-2 shrink-0 rounded-full;
   }
 
   .stage-lead {
@@ -162,7 +195,7 @@
     @apply w-full border-collapse text-[13px];
   }
   .table th {
-    @apply border-b border-line px-4 py-2.5 text-left text-[11px] font-medium tracking-wide text-ink-muted uppercase;
+    @apply border-b border-line bg-canvas/60 px-4 py-2.5 text-left text-[11px] font-semibold tracking-wide text-ink-muted uppercase;
   }
   .table td {
     @apply border-b border-line px-4 py-3 align-middle;
@@ -178,20 +211,29 @@
     @apply mt-1.5 text-[12px] text-danger;
   }
   .form-error {
-    @apply rounded-sm border border-danger/30 bg-danger-soft px-3.5 py-2.5 text-[13px] text-danger;
+    @apply rounded-sm border border-danger/25 bg-danger-soft px-3.5 py-2.5 text-[13px] text-danger;
   }
   .form-success {
-    @apply rounded-sm border border-sage-300 bg-sage-50 px-3.5 py-2.5 text-[13px] text-sage-900;
+    @apply rounded-sm border border-sage-200 bg-sage-50 px-3.5 py-2.5 text-[13px] text-sage-900;
+  }
+  .form-warning {
+    @apply rounded-sm border border-warning/25 bg-warning-soft px-3.5 py-2.5 text-[13px] text-warning;
   }
   .kbd-hint {
     @apply text-[11px] text-ink-faint;
   }
 
   .nav-link {
-    @apply flex h-9 items-center gap-3 rounded-sm px-3 text-[13px] font-medium text-ink-muted transition-colors hover:bg-sage-50 hover:text-ink;
+    @apply flex h-9 items-center gap-3 rounded-sm px-3 text-[13px] font-medium text-white/60 transition-colors hover:bg-white/5 hover:text-white;
   }
   .nav-link-active {
-    @apply bg-sage-100 text-sage-900 hover:bg-sage-100;
+    @apply bg-white/10 text-white hover:bg-white/10;
+  }
+  .tab-link {
+    @apply inline-flex h-8 items-center rounded-sm px-3 text-[13px] font-medium whitespace-nowrap text-ink-muted transition-colors hover:bg-paper hover:text-ink;
+  }
+  .tab-link-active {
+    @apply bg-paper text-ink shadow-card;
   }
 
   .prose-email {

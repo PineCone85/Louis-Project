@@ -17,17 +17,15 @@ const ITEMS = [
 export function SettingsNav() {
   const pathname = usePathname();
   return (
-    <nav className="flex flex-wrap gap-1 border-b border-line bg-paper px-6 md:px-8">
+    <nav className="scrollbar-thin mx-4 mt-4 flex gap-1 overflow-x-auto rounded-md border border-line bg-canvas p-1 sm:mx-6 md:mx-8">
       {ITEMS.map((item) => {
         const active = item.href === "/settings" ? pathname === "/settings" : pathname.startsWith(item.href);
         return (
           <Link
             key={item.href}
             href={item.href}
-            className={cx(
-              "-mb-px border-b-2 px-3 py-2.5 text-[13px] font-medium transition-colors",
-              active ? "border-ink text-ink" : "border-transparent text-ink-muted hover:text-ink",
-            )}
+            aria-current={active ? "page" : undefined}
+            className={cx("tab-link", active && "tab-link-active")}
           >
             {item.label}
           </Link>
