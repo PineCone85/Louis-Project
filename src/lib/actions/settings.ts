@@ -97,6 +97,7 @@ export async function saveProfileAction(_prev: ActionResult<{ saved: boolean }>,
       currency: parsed.data.currency,
       businessHours: business.hours,
       trackUnknownSenders: formBoolean(formData, "trackUnknownSenders"),
+      autoCreateClients: formBoolean(formData, "autoCreateClients"),
       syncSentMail: formBoolean(formData, "syncSentMail"),
       updatedAt: new Date(),
     })

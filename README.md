@@ -11,7 +11,7 @@ Built with Next.js 16, React 19, Tailwind CSS 4, Drizzle ORM and Postgres. Desig
 - **Properties**: manual property records with price, location, specifications, features and private notes. Link properties to clients with a status (suggested, interested, viewing scheduled, viewed, offer made, not interested, purchased), viewing dates and notes. Both directions are visible.
 - **Gmail, Outlook and any other mailbox**: connect one or more mailboxes with OAuth: Google (Gmail or Google Workspace) and Microsoft (Microsoft 365, Exchange Online or personal Outlook.com). Addresses hosted anywhere else (a domain's own mail server or web host such as xneelo or cPanel) connect with their IMAP and SMTP settings. Incoming mail is matched to clients by email address, shown on the client timeline and in the unified inbox, and can be replied to from the CRM (replies thread correctly in the mailbox). Mail you send from the mailbox itself to known clients is imported too. Attachments open through the CRM.
 - **WhatsApp**: the official WhatsApp Business Platform (Cloud API). Agents connect their own WhatsApp Business numbers in Settings with Meta's Embedded Signup, including numbers they keep using in the WhatsApp Business app. Incoming messages are matched to clients by mobile number; text, images, documents, audio, video, locations and contacts are supported. Reply from the CRM inside the 24-hour customer service window, or send an approved template message outside it.
-- **Unified inbox and notifications**: every conversation across both channels, unread counts, an unread badge in the navigation, in-app notifications for new messages, and a dashboard list of clients who need attention. Conversations from unknown senders can be linked to an existing client or turned into a new client in one click.
+- **Unified inbox and notifications**: every conversation across both channels, unread counts, an unread badge in the navigation, in-app notifications for new messages, and a dashboard list of clients who need attention. New email senders are added as clients automatically (newsletters, notifications and bounces are skipped; this can be switched off in Settings). Other conversations from unknown senders can be linked to an existing client or turned into a new client in one click.
 - **Automatic replies**: deterministic rules (every message, first message from a new contact, keyword match, outside business hours), scoped to clients or unknown contacts and to pipeline stages, with cooldowns and once-per-conversation protection. Replies use your own templates. Nothing is AI-generated. Automated senders, bulk mail and bounces never receive a reply.
 - **Templates**: reusable quick replies with placeholders such as `{{first_name}}` and `{{agent_name}}`.
 - **One secure account**: a single administrator with a hashed password, signed session cookie, login throttling and encrypted OAuth tokens at rest.
@@ -33,7 +33,7 @@ Built with Next.js 16, React 19, Tailwind CSS 4, Drizzle ORM and Postgres. Desig
 There is no background worker. Mailboxes are synchronised by:
 
 1. the app itself every 45 seconds while it is open (an incremental Gmail `history.list`, Graph delta call or IMAP UID check per mailbox),
-2. the scheduled `/api/cron/sync` endpoint (daily on Vercel Hobby, as often as you like on Pro or with an external scheduler), and
+2. the scheduled `/api/cron/sync` endpoint, called every 5 minutes by the included GitHub Actions workflow (`.github/workflows/background-sync.yml`) so mail keeps arriving and automations keep running when nobody has the CRM open, plus the daily Vercel Cron, and
 3. push notifications, if configured, for instant delivery: Google Cloud Pub/Sub for Gmail, Microsoft Graph change notifications for Outlook.
 
 WhatsApp messages arrive instantly through Meta's webhook.
@@ -95,7 +95,7 @@ Add these in **Settings > Environment Variables** (see `.env.example` for descri
 | `WHATSAPP_APP_ID`, `WHATSAPP_APP_SECRET`, `WHATSAPP_CONFIG_ID`, `WHATSAPP_VERIFY_TOKEN` | for WhatsApp | From Meta for Developers; lets agents connect their own numbers in Settings > WhatsApp |
 | `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_BUSINESS_ACCOUNT_ID`, `WHATSAPP_ACCESS_TOKEN` | optional | One number configured by hand instead of (or as well as) connected numbers |
 
-Then deploy. The included `vercel.json` schedules `/api/cron/sync` once a day (the most the Hobby plan allows). On Pro you can change the schedule to `*/5 * * * *`. Any external scheduler can also call `GET {APP_URL}/api/cron/sync` with the header `Authorization: Bearer {CRON_SECRET}`.
+Then deploy. To keep syncing around the clock with every browser and laptop closed, add two repository secrets in GitHub (**Settings > Secrets and variables > Actions**): `APP_URL` (the production URL) and `CRON_SECRET` (the same value as in Vercel). The **Background sync** workflow then calls the sync endpoint every 5 minutes; run it once by hand from the **Actions** tab to check it. The included `vercel.json` schedules `/api/cron/sync` once a day (the most the Hobby plan allows). On Pro you can change the schedule to `*/5 * * * *`. Any external scheduler can also call `GET {APP_URL}/api/cron/sync` with the header `Authorization: Bearer {CRON_SECRET}`.
 
 ### 3. Gmail (Google Cloud)
 

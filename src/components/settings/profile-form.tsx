@@ -112,6 +112,13 @@ export function ProfileForm({ settings }: { settings: Settings }) {
             </span>
           </label>
           <label className="flex cursor-pointer items-start gap-3 text-[13px]">
+            <input type="checkbox" name="autoCreateClients" defaultChecked={settings.autoCreateClients} className="checkbox mt-0.5" />
+            <span>
+              <span className="font-medium text-ink">Add new email senders as clients automatically</span>
+              <span className="block text-ink-muted">Anyone who emails you who is not a client yet is added to Clients with their name and email address. Newsletters, notifications and bounces are never added.</span>
+            </span>
+          </label>
+          <label className="flex cursor-pointer items-start gap-3 text-[13px]">
             <input type="checkbox" name="syncSentMail" defaultChecked={settings.syncSentMail} className="checkbox mt-0.5" />
             <span>
               <span className="font-medium text-ink">Include emails you send to clients from your mailbox directly</span>

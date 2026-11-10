@@ -1,0 +1,36 @@
+# Keeps Foyer checking mailboxes and running time-based workflows around the clock,
+# whether or not anyone has the CRM open. It calls the deployment's /api/cron/sync
+# endpoint every 5 minutes (GitHub may run scheduled jobs a few minutes late).
+#
+# Setup (once): GitHub repo > Settings > Secrets and variables > Actions > New repository secret
+#   APP_URL      the production URL, e.g. https://foyer.example.com (no trailing slash)
+#   CRON_SECRET  the same value as CRON_SECRET in the Vercel project settings
+name: Background sync
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: background-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Sync mailboxes and run scheduled workflows
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$APP_URL" ] || [ -z "$CRON_SECRET" ]; then
+            echo "::warning::APP_URL and CRON_SECRET repository secrets are not set; skipping."
+            exit 0
+          fi
+          curl --fail-with-body --silent --show-error --max-time 90 --retry 2 --retry-delay 10 \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            "${APP_URL%/}/api/cron/sync"
+          echo

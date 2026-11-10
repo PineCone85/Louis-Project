@@ -85,3 +85,24 @@ export function splitName(fullName: string | null | undefined): { firstName: str
   if (parts.length === 1) return { firstName: parts[0], lastName: "" };
   return { firstName: parts[0], lastName: parts.slice(1).join(" ") };
 }
+
+/**
+ * A client name for an email contact: the display name ("Jane van der Merwe" or "Smith, John"),
+ * or, when there is none, one derived from the address ("john.smith42@" becomes John Smith).
+ */
+export function nameFromContact(name: string | null, address: string): { firstName: string; lastName: string } {
+  const display = (name ?? "").replace(/["']/g, "").replace(/\s+/g, " ").trim();
+  if (display && !display.includes("@")) {
+    const comma = display.match(/^([^,]+),\s*([^,]+)$/);
+    if (comma) return { firstName: comma[2].trim(), lastName: comma[1].trim() };
+    return splitName(display);
+  }
+  const local = (address.split("@")[0] ?? "")
+    .replace(/[._+-]+/g, " ")
+    .replace(/\d+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+  if (!local) return { firstName: address, lastName: "" };
+  return splitName(local);
+}
