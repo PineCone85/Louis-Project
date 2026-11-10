@@ -11,6 +11,8 @@ import { evaluateAutoReply } from "@/lib/auto-reply/engine";
 import { dispatchWorkflowEvent } from "@/lib/workflows/engine";
 import { findClientByEmail, findClientByPhone } from "./matching";
 import { createNotification } from "./notifications";
+import { logActivity } from "./activity";
+import { nameFromContact } from "@/lib/email-address";
 
 const MAX_TEXT = 200_000;
 const MAX_HTML = 400_000;
@@ -38,6 +40,24 @@ async function touchClient(client: Client, direction: "inbound" | "outbound", at
 // ---------------------------------------------------------------------------
 // Email
 // ---------------------------------------------------------------------------
+
+/** Creates a client from the sender of a new incoming email and links the sender's earlier messages. */
+async function createClientFromEmail(contact: { name: string | null; address: string }): Promise<Client> {
+  const { firstName, lastName } = nameFromContact(contact.name, contact.address);
+  const [created] = await db
+    .insert(clients)
+    .values({ firstName, lastName, email: contact.address.toLowerCase(), source: "Email enquiry" })
+    .returning();
+  await logActivity({
+    clientId: created.id,
+    type: "client_created",
+    title: "Client added automatically",
+    body: `Created from an email sent by ${contact.address}`,
+  });
+  await relinkMessagesForClient(created);
+  await dispatchWorkflowEvent({ trigger: "client.created", client: created });
+  return created;
+}
 
 /** Automatic replies are never sent for mail older than this, for example after a mailbox was reconnected. */
 const AUTO_REPLY_MAX_AGE_MS = 24 * 60 * 60 * 1000;
@@ -67,10 +87,11 @@ export async function ingestEmail(input: IngestEmailInput): Promise<IngestResult
 
   if (direction === "outbound" && !settings.syncSentMail) return { message: null, created: false, client: null };
 
-  const client = await findClientByEmail(counterpart.address);
+  let client = await findClientByEmail(counterpart.address);
   if (!client) {
     if (direction === "outbound") return { message: null, created: false, client: null };
-    if (!settings.trackUnknownSenders) return { message: null, created: false, client: null };
+    const willCreateClient = settings.autoCreateClients && !input.historical && !isAutomatedEmail(parsed);
+    if (!settings.trackUnknownSenders && !willCreateClient) return { message: null, created: false, client: null };
   }
 
   // A message is stored once even when several mailboxes hold a copy (the agent's other address on
@@ -138,6 +159,18 @@ export async function ingestEmail(input: IngestEmailInput): Promise<IngestResult
 
   if (!inserted) return { message: null, created: false, client };
 
+  // A genuine new enquiry (not a newsletter, bounce or automated notice) becomes a client straight away.
+  let autoCreated = false;
+  if (!client && direction === "inbound" && !input.historical && settings.autoCreateClients && !isAutomatedEmail(parsed)) {
+    try {
+      client = await createClientFromEmail(counterpart);
+      autoCreated = true;
+      inserted.clientId = client.id;
+    } catch (error) {
+      console.error("[ingest] could not create a client from an email:", error);
+    }
+  }
+
   if (client) await touchClient(client, direction, parsed.sentAt);
 
   if (direction === "inbound" && !input.historical) {
@@ -145,13 +178,18 @@ export async function ingestEmail(input: IngestEmailInput): Promise<IngestResult
       type: "email_received",
       clientId: client?.id ?? null,
       messageId: inserted.id,
-      title: client ? `New email from ${client.firstName} ${client.lastName}`.trim() : `New email from ${counterpart.name ?? counterpart.address}`,
+      title: autoCreated
+        ? `New client from email: ${counterpart.name ?? counterpart.address}`
+        : client
+          ? `New email from ${client.firstName} ${client.lastName}`.trim()
+          : `New email from ${counterpart.name ?? counterpart.address}`,
       body: parsed.subject || truncate(parsed.text, 120),
     });
     await evaluateAutoReply({
       channel: "email",
       message: inserted,
-      client,
+      // A client created from this very email is still a new enquiry for "unknown contact" rules.
+      client: autoCreated ? null : client,
       isNewContact,
       settings,
       safeToReply: !isAutomatedEmail(parsed) && Date.now() - parsed.sentAt.getTime() < AUTO_REPLY_MAX_AGE_MS,

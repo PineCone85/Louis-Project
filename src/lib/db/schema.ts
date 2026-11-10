@@ -289,6 +289,8 @@ export const settings = pgTable("settings", {
   emailAutoRepliesEnabled: boolean("email_auto_replies_enabled").notNull().default(false),
   whatsappAutoRepliesEnabled: boolean("whatsapp_auto_replies_enabled").notNull().default(false),
   trackUnknownSenders: boolean("track_unknown_senders").notNull().default(true),
+  /** Turn the sender of a new incoming email into a client automatically. */
+  autoCreateClients: boolean("auto_create_clients").notNull().default(true),
   syncSentMail: boolean("sync_sent_mail").notNull().default(true),
   /** Custom pipeline stages. Null means the built-in default pipeline. */
   pipelineStages: jsonb("pipeline_stages").$type<Stage[]>(),

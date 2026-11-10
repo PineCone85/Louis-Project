@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatAddress, normalizeEmail, parseAddressList, splitName } from "@/lib/email-address";
+import { formatAddress, nameFromContact, normalizeEmail, parseAddressList, splitName } from "@/lib/email-address";
 
 describe("parseAddressList", () => {
   it("parses names, quoted names with commas and bare addresses", () => {
@@ -37,5 +37,18 @@ describe("splitName", () => {
     expect(splitName("Jane Marie Doe")).toEqual({ firstName: "Jane", lastName: "Marie Doe" });
     expect(splitName("Jane")).toEqual({ firstName: "Jane", lastName: "" });
     expect(splitName(undefined)).toEqual({ firstName: "", lastName: "" });
+  });
+});
+
+describe("nameFromContact", () => {
+  it("splits a display name", () => {
+    expect(nameFromContact("Jane van der Merwe", "jane@example.com")).toEqual({ firstName: "Jane", lastName: "van der Merwe" });
+  });
+  it("handles 'Last, First'", () => {
+    expect(nameFromContact("Smith, John", "j@example.com")).toEqual({ firstName: "John", lastName: "Smith" });
+  });
+  it("falls back to the address", () => {
+    expect(nameFromContact(null, "john.smith42@example.com")).toEqual({ firstName: "John", lastName: "Smith" });
+    expect(nameFromContact('"a@b.com"', "123@example.com")).toEqual({ firstName: "123@example.com", lastName: "" });
   });
 });
