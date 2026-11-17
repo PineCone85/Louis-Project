@@ -22,6 +22,8 @@ export function htmlToText(html: string): string {
       .replace(/<!--[\s\S]*?-->/g, "")
       .replace(/<br\s*\/?>/gi, "\n")
       .replace(/<\/(p|div|tr|li|h[1-6]|blockquote|pre)>/gi, "\n")
+      // Keep table cells apart, so a form laid out as <td>Name</td><td>Jane</td> reads "Name\tJane".
+      .replace(/<\/t[dh]>/gi, "\t")
       .replace(/<[^>]+>/g, ""),
   )
     .replace(/\r/g, "")

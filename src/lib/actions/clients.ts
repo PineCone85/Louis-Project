@@ -1,13 +1,15 @@
 "use server";
 
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { requireSession } from "@/lib/auth/session";
 import { CLIENT_PROPERTY_STATUSES, CLIENT_TYPES, ACTIVITY_TYPES } from "@/lib/constants";
 import { db } from "@/lib/db";
-import { activities, clientProperties, clients, properties } from "@/lib/db/schema";
+import { activities, clientProperties, clients, messages, properties } from "@/lib/db/schema";
+import { extractLeadDetailsWithAi } from "@/lib/ai/lead-details";
+import { describeLeadFields, leadFieldsForClient } from "@/lib/messaging/lead";
 import { normalizeEmail } from "@/lib/email-address";
 import { parseDateTimeLocal } from "@/lib/format";
 import { logActivity } from "@/lib/messaging/activity";
@@ -313,4 +315,46 @@ export async function unlinkPropertyAction(clientId: string, propertyId: string)
   revalidateClient(clientId);
   revalidatePath(`/properties/${propertyId}`);
   revalidatePath("/properties");
+}
+
+const MAX_EMAILS_TO_READ = 5;
+
+/**
+ * Fills a client's empty fields (phone, budget, areas, requirements, type) from the emails they sent,
+ * oldest first, and keeps the first enquiry as a note. Nothing the agent entered is overwritten.
+ */
+export async function fillClientFromEmailsAction(clientId: string): Promise<ActionResult<{ summary: string }>> {
+  await requireSession();
+  const settings = await getSettings();
+  let client = await db.query.clients.findFirst({ where: eq(clients.id, clientId) });
+  if (!client) return { ok: false, error: "Client not found" };
+
+  const inbound = await db.query.messages.findMany({
+    where: and(eq(messages.clientId, clientId), eq(messages.channel, "email"), eq(messages.direction, "inbound")),
+    orderBy: [asc(messages.sentAt)],
+    limit: MAX_EMAILS_TO_READ,
+  });
+  if (inbound.length === 0) return { ok: false, error: "This client has not sent any emails yet." };
+
+  const filled: string[] = [];
+  for (const message of inbound) {
+    const details = await extractLeadDetailsWithAi({
+      subject: message.subject ?? "",
+      text: message.bodyText ?? "",
+      defaultCountry: settings.defaultCountry,
+      senderName: message.contactName,
+    });
+    const fields = leadFieldsForClient(details, client, { subject: message.subject, sentAt: message.sentAt });
+    if (Object.keys(fields).length === 0) continue;
+    const [updated] = await db.update(clients).set({ ...fields, updatedAt: new Date() }).where(eq(clients.id, clientId)).returning();
+    client = updated;
+    const captured = describeLeadFields(fields);
+    if (captured) filled.push(captured);
+  }
+
+  if (filled.length === 0) return { ok: true, data: { summary: "Nothing new found in this client's emails." } };
+  const summary = `Added ${filled.join("; ")} from the client's emails.`;
+  await logActivity({ clientId, type: "note", title: "Details filled in from email", body: summary });
+  revalidateClient(clientId);
+  return { ok: true, data: { summary } };
 }

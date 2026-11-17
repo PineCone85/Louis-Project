@@ -20,6 +20,7 @@ import { ActivityForm } from "@/components/clients/activity-form";
 import { FollowUpForm } from "@/components/clients/follow-up-form";
 import { PropertyLinks } from "@/components/clients/property-links";
 import { RefreshCounts } from "@/components/clients/refresh-counts";
+import { FillFromEmailButton } from "@/components/clients/fill-from-email";
 import { StageSelect } from "@/components/clients/stage-select";
 import { Timeline } from "@/components/conversation/timeline";
 import { ConfirmButton } from "@/components/ui/form-controls";
@@ -68,6 +69,7 @@ export default async function ClientPage({ params }: { params: Promise<{ id: str
         actions={
           <>
             <StageSelect clientId={client.id} stage={client.stage} />
+            {client.email || client.alternateEmail ? <FillFromEmailButton clientId={client.id} /> : null}
             <Link href={`/clients/${client.id}/edit`} className="btn btn-secondary">
               <Pencil size={14} /> Edit
             </Link>

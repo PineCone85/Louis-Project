@@ -13,6 +13,8 @@ import { findClientByEmail, findClientByPhone } from "./matching";
 import { createNotification } from "./notifications";
 import { logActivity } from "./activity";
 import { nameFromContact } from "@/lib/email-address";
+import { extractLeadDetailsWithAi } from "@/lib/ai/lead-details";
+import { describeLeadFields, leadFieldsForClient } from "./lead";
 
 const MAX_TEXT = 200_000;
 const MAX_HTML = 400_000;
@@ -41,18 +43,35 @@ async function touchClient(client: Client, direction: "inbound" | "outbound", at
 // Email
 // ---------------------------------------------------------------------------
 
-/** Creates a client from the sender of a new incoming email and links the sender's earlier messages. */
-async function createClientFromEmail(contact: { name: string | null; address: string }): Promise<Client> {
-  const { firstName, lastName } = nameFromContact(contact.name, contact.address);
+/**
+ * Creates a client from the sender of a new incoming email and links the sender's earlier messages.
+ * Besides the name and address, whatever the email says about the enquirer (phone numbers, budget,
+ * areas, requirements and the enquiry itself) is recorded on the client.
+ */
+async function createClientFromEmail(contact: { name: string | null; address: string }, parsed: ParsedEmail, settings: Settings): Promise<Client> {
+  const fromHeader = nameFromContact(contact.name, contact.address);
+  const details = await extractLeadDetailsWithAi({
+    subject: parsed.subject,
+    text: parsed.text,
+    defaultCountry: settings.defaultCountry,
+    senderName: contact.name,
+  });
+  const fields = leadFieldsForClient(details, null, { subject: parsed.subject || null, sentAt: parsed.sentAt });
+  // The display name wins; a name typed into the email only replaces one guessed from the address.
+  const hasDisplayName = Boolean(contact.name && !contact.name.includes("@"));
+  const firstName = (!hasDisplayName && details.firstName) || fromHeader.firstName || details.firstName || contact.address;
+  const lastName = (!hasDisplayName && details.firstName ? details.lastName : fromHeader.lastName) || "";
+
   const [created] = await db
     .insert(clients)
-    .values({ firstName, lastName, email: contact.address.toLowerCase(), source: "Email enquiry" })
+    .values({ ...fields, firstName, lastName, email: contact.address.toLowerCase(), source: "Email enquiry" })
     .returning();
+  const captured = describeLeadFields(fields);
   await logActivity({
     clientId: created.id,
     type: "client_created",
     title: "Client added automatically",
-    body: `Created from an email sent by ${contact.address}`,
+    body: `Created from an email sent by ${contact.address}${captured ? `, with ${captured} taken from the email` : ""}`,
   });
   await relinkMessagesForClient(created);
   await dispatchWorkflowEvent({ trigger: "client.created", client: created });
@@ -163,7 +182,7 @@ export async function ingestEmail(input: IngestEmailInput): Promise<IngestResult
   let autoCreated = false;
   if (!client && direction === "inbound" && !input.historical && settings.autoCreateClients && !isAutomatedEmail(parsed)) {
     try {
-      client = await createClientFromEmail(counterpart);
+      client = await createClientFromEmail(counterpart, parsed, settings);
       autoCreated = true;
       inserted.clientId = client.id;
     } catch (error) {
